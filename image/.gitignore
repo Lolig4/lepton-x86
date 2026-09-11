@@ -1,0 +1,12 @@
+output/
+.gitconfig
+.cache
+.repoconfig
+.bash_history
+.lesshst
+.netrc
+.wget-hsts
+.repo*
+*.img
+*.tar.gz
+NOTICE.txt

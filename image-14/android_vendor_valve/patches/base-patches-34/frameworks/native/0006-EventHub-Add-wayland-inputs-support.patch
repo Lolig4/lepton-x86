@@ -1,0 +1,173 @@
+From 86c576540f019fe34c93073f7809b56955db4e4c Mon Sep 17 00:00:00 2001
+From: Erfan Abdi <erfangplus@gmail.com>
+Date: Fri, 4 Jun 2021 16:27:09 +0430
+Subject: [PATCH 06/19] EventHub: Add wayland inputs support
+
+---
+ services/inputflinger/reader/EventHub.cpp | 98 +++++++++++++++++------
+ 1 file changed, 74 insertions(+), 24 deletions(-)
+
+diff --git a/services/inputflinger/reader/EventHub.cpp b/services/inputflinger/reader/EventHub.cpp
+index 9dddcd5d8a..2154bb544f 100644
+--- a/services/inputflinger/reader/EventHub.cpp
++++ b/services/inputflinger/reader/EventHub.cpp
+@@ -933,7 +933,24 @@ static void ensureProcessCanBlockSuspend() {
+ 
+ const int EventHub::EPOLL_MAX_EVENTS;
+ 
+-#define INPUT_PIPE_NAME "/dev/input/wayland_events"
++enum {
++    WL_INPUT_TOUCH,
++    WL_INPUT_KEYBOARD,
++    WL_INPUT_POINTER,
++    WL_INPUT_TOTAL
++};
++
++static const char *INPUT_PIPE_NAME[WL_INPUT_TOTAL] = {
++    "/dev/input/wl_touch_events",
++    "/dev/input/wl_keyboard_events",
++    "/dev/input/wl_pointer_events"
++};
++
++static const char *INPUT_TYPE_NAME[WL_INPUT_TOTAL] = {
++    "wayland_touch",
++    "wayland_keyboard",
++    "wayland_pointer"
++};
+ 
+ EventHub::EventHub(void)
+       : mBuiltInKeyboardId(NO_BUILT_IN_KEYBOARD),
+@@ -950,8 +967,6 @@ EventHub::EventHub(void)
+     mEpollFd = epoll_create1(EPOLL_CLOEXEC);
+     LOG_ALWAYS_FATAL_IF(mEpollFd < 0, "Could not create epoll instance: %s", strerror(errno));
+ 
+-    mkfifo(INPUT_PIPE_NAME, 0777);
+-
+     mINotifyFd = inotify_init1(IN_CLOEXEC);
+     LOG_ALWAYS_FATAL_IF(mINotifyFd < 0, "Could not create inotify instance: %s", strerror(errno));
+ 
+@@ -2379,7 +2394,9 @@ void EventHub::openDeviceLocked(const std::string& devicePath) {
+         }
+     }
+ 
+-    //char buffer[80];
++    char buffer[80];
++    int inputType = 0;
++    bool isWayland = false;
+ 
+     ALOGV("Opening device: %s", devicePath.c_str());
+ 
+@@ -2389,15 +2406,24 @@ void EventHub::openDeviceLocked(const std::string& devicePath) {
+         return;
+     }
+ 
++    for (inputType = 0; inputType < WL_INPUT_TOTAL; inputType++) {
++        if (devicePath == INPUT_PIPE_NAME[inputType]) {
++            isWayland = true;
++            break;
++        }
++    }
++
+     InputDeviceIdentifier identifier;
+-    identifier.name = "wayland";
++
++if (isWayland) {
++    identifier.name = INPUT_TYPE_NAME[inputType];
+     identifier.bus = BUS_VIRTUAL;
+     identifier.product = 1;
+     identifier.vendor = 1;
+     identifier.version = 1;
+     identifier.location = "wayland";
+-    identifier.uniqueId = "wayland";
+-#if 0
++    identifier.uniqueId = INPUT_TYPE_NAME[inputType];
++} else {
+     // Get device name.
+     if (ioctl(fd, EVIOCGNAME(sizeof(buffer) - 1), &buffer) < 1) {
+         ALOGE("Could not get device name for %s: %s", devicePath.c_str(), strerror(errno));
+@@ -2462,7 +2488,7 @@ void EventHub::openDeviceLocked(const std::string& devicePath) {
+             c = ::toupper(c);
+         }
+     }
+-#endif
++}
+     // Fill in the descriptor.
+     assignDescriptorLocked(identifier);
+ 
+@@ -2488,7 +2514,7 @@ void EventHub::openDeviceLocked(const std::string& devicePath) {
+     // Load the configuration file for the device.
+     device->loadConfigurationLocked();
+ 
+-#if 0
++if (!isWayland) {
+     // Figure out the kinds of events the device reports.
+     device->readDeviceBitMask(EVIOCGBIT(EV_KEY, 0), device->keyBitmask);
+     device->readDeviceBitMask(EVIOCGBIT(EV_ABS, 0), device->absBitmask);
+@@ -2653,25 +2679,49 @@ void EventHub::openDeviceLocked(const std::string& devicePath) {
+     if (device->associatedDevice && !device->associatedDevice->lightInfos.empty()) {
+         device->classes |= InputDeviceClass::LIGHT;
+     }
+-#endif
+ 
+-    device->classes |= INPUT_DEVICE_CLASS_TOUCH_MT;
++} else {
++
++    if (inputType == WL_INPUT_TOUCH) {
++        device->classes |= InputDeviceClass::TOUCH_MT;
++
++        set_bit(INPUT_PROP_DIRECT, device->propBitmask);
+ 
+-    //device->propBitmask = 0;
+-    set_bit(INPUT_PROP_DIRECT, device->propBitmask);
++        set_bit(ABS_MT_POSITION_X, device->absBitmask);
++        set_bit(ABS_MT_POSITION_Y, device->absBitmask);
++        set_bit(ABS_MT_TOUCH_MAJOR, device->absBitmask);
++        set_bit(ABS_MT_TOUCH_MINOR, device->absBitmask);
++        set_bit(ABS_MT_ORIENTATION, device->absBitmask);
++        set_bit(ABS_MT_TRACKING_ID, device->absBitmask);
++        set_bit(ABS_MT_PRESSURE, device->absBitmask);
++        set_bit(ABS_MT_SLOT, device->absBitmask);
+ 
+-    set_bit(ABS_MT_POSITION_X, device->absBitmask);
+-    set_bit(ABS_MT_POSITION_Y, device->absBitmask);
+-    set_bit(ABS_MT_TOUCH_MAJOR, device->absBitmask);
+-    set_bit(ABS_MT_TOUCH_MINOR, device->absBitmask);
+-    set_bit(ABS_MT_ORIENTATION, device->absBitmask);
+-    set_bit(ABS_MT_TRACKING_ID, device->absBitmask);
+-    set_bit(ABS_MT_PRESSURE, device->absBitmask);
+-    set_bit(ABS_MT_SLOT, device->absBitmask);
++        set_bit(ABS_X, device->absBitmask);
++        set_bit(ABS_Y, device->absBitmask);
++        set_bit(ABS_PRESSURE, device->absBitmask);
++    } else if (inputType == WL_INPUT_KEYBOARD) {
++        device->classes |= INPUT_DEVICE_CLASS_KEYBOARD;
++        device->classes |= INPUT_DEVICE_CLASS_ALPHAKEY;
+ 
+-    set_bit(ABS_X, device->absBitmask);
+-    set_bit(ABS_Y, device->absBitmask);
+-    set_bit(ABS_PRESSURE, device->absBitmask);
++        set_bit(BTN_MISC, device->keyBitmask);
++        set_bit(KEY_OK, device->keyBitmask);
++
++        // Load the keymap for the device.
++        device->loadKeyMapLocked();
++    } else if (inputType == WL_INPUT_POINTER) {
++        device->classes |= INPUT_DEVICE_CLASS_CURSOR;
++
++        set_bit(INPUT_PROP_POINTER, device->propBitmask);
++
++        set_bit(ABS_X, device->absBitmask);
++        set_bit(ABS_Y, device->absBitmask);
++        set_bit(BTN_MOUSE, device->keyBitmask);
++        set_bit(REL_X, device->relBitmask);
++        set_bit(REL_Y, device->relBitmask);
++        set_bit(REL_HWHEEL, device->relBitmask);
++        set_bit(REL_WHEEL, device->relBitmask);
++    }
++}
+ 
+     // Determine whether the device has a mic.
+     if (device->deviceHasMicLocked()) {
+-- 
+2.55.0
+

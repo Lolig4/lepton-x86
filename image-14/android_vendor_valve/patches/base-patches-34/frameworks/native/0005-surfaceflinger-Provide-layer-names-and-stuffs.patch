@@ -1,0 +1,331 @@
+From 8726140e4112e8bd915cf7f1dbe8a4b4bb6f68b5 Mon Sep 17 00:00:00 2001
+From: Erfan Abdi <erfangplus@gmail.com>
+Date: Tue, 24 Aug 2021 22:45:23 +0430
+Subject: [PATCH 05/19] surfaceflinger: Provide layer names and stuffs
+
+Change-Id: I90e19e2e7d4458d76ca2794fd08a04250855ef30
+---
+ services/surfaceflinger/Android.bp            |  1 +
+ .../CompositionEngine/Android.bp              |  1 +
+ .../CompositionEngine/src/OutputLayer.cpp     |  6 +++
+ .../DisplayHardware/AidlComposerHal.cpp       | 42 +++++++++++++++++++
+ .../DisplayHardware/AidlComposerHal.h         | 11 +++++
+ .../DisplayHardware/ComposerHal.h             |  3 ++
+ .../surfaceflinger/DisplayHardware/HWC2.cpp   | 12 ++++++
+ .../surfaceflinger/DisplayHardware/HWC2.h     |  6 +++
+ .../DisplayHardware/HidlComposerHal.cpp       | 22 ++++++++++
+ .../DisplayHardware/HidlComposerHal.h         | 11 +++++
+ 10 files changed, 115 insertions(+)
+
+diff --git a/services/surfaceflinger/Android.bp b/services/surfaceflinger/Android.bp
+index 46252e139f..933c976c38 100644
+--- a/services/surfaceflinger/Android.bp
++++ b/services/surfaceflinger/Android.bp
+@@ -276,6 +276,7 @@ cc_binary {
+     ],
+     shared_libs: [
+         "libSurfaceFlingerProp",
++        "vendor.waydroid.display@1.0",
+     ],
+ 
+     logtags: ["EventLog/EventLogTags.logtags"],
+diff --git a/services/surfaceflinger/CompositionEngine/Android.bp b/services/surfaceflinger/CompositionEngine/Android.bp
+index 0b01c666a4..6f7023f90f 100644
+--- a/services/surfaceflinger/CompositionEngine/Android.bp
++++ b/services/surfaceflinger/CompositionEngine/Android.bp
+@@ -39,6 +39,7 @@ cc_defaults {
+         "libui",
+         "libutils",
+         "server_configurable_flags",
++        "vendor.waydroid.display@1.0",
+     ],
+     static_libs: [
+         "liblayers_proto",
+diff --git a/services/surfaceflinger/CompositionEngine/src/OutputLayer.cpp b/services/surfaceflinger/CompositionEngine/src/OutputLayer.cpp
+index 091c207464..c53e4a0148 100644
+--- a/services/surfaceflinger/CompositionEngine/src/OutputLayer.cpp
++++ b/services/surfaceflinger/CompositionEngine/src/OutputLayer.cpp
+@@ -462,6 +462,12 @@ void OutputLayer::writeOutputDependentGeometryStateToHWC(HWC2::Layer* hwcLayer,
+               to_string(error).c_str(), static_cast<int32_t>(error));
+     }
+ 
++    if (auto error = hwcLayer->setLayerName(getLayerFE().getDebugName());
++            error != hal::Error::NONE) {
++            ALOGE("[%s] Failed to set layer name: %s (%d)", getLayerFE().getDebugName(),
++                  to_string(error).c_str(), static_cast<int32_t>(error));
++    }
++
+     // Solid-color layers and overridden buffers should always use an identity transform.
+     const auto bufferTransform = (requestedCompositionType != Composition::SOLID_COLOR &&
+                                   getState().overrideInfo.buffer == nullptr)
+diff --git a/services/surfaceflinger/DisplayHardware/AidlComposerHal.cpp b/services/surfaceflinger/DisplayHardware/AidlComposerHal.cpp
+index 362ab9c39e..68361ddc87 100644
+--- a/services/surfaceflinger/DisplayHardware/AidlComposerHal.cpp
++++ b/services/surfaceflinger/DisplayHardware/AidlComposerHal.cpp
+@@ -351,6 +351,8 @@ void AidlComposer::registerCallback(HWC2::ComposerCallback& callback) {
+     if (!status.isOk()) {
+         ALOGE("registerCallback failed %s", status.getDescription().c_str());
+     }
++
++    mWaydroidDisplay = IWaydroidDisplay::getService();
+ }
+ 
+ Error AidlComposer::executeCommands(Display display) {
+@@ -719,6 +721,10 @@ Error AidlComposer::setClientTarget(Display display, uint32_t slot, const sp<Gra
+                                     float hdrSdrRatio) {
+     const native_handle_t* handle = nullptr;
+     if (target.get()) {
++        if (mWaydroidDisplay)
++            mWaydroidDisplay->setTargetLayerHandleInfo(static_cast<uint32_t>(target->getPixelFormat()), target->getStride());
++        if (mWaydroidDisplay_1)
++            mWaydroidDisplay_1->setTargetLayerSize(target->getWidth(), target->getHeight());
+         handle = target->getNativeBuffer()->handle;
+     }
+ 
+@@ -901,6 +907,9 @@ Error AidlComposer::setLayerBuffer(Display display, Layer layer, uint32_t slot,
+                                    const sp<GraphicBuffer>& buffer, int acquireFence) {
+     const native_handle_t* handle = nullptr;
+     if (buffer.get()) {
++        if (mWaydroidDisplay)
++            mWaydroidDisplay->setLayerHandleInfo(mLayersZMap[layer], buffer->getPixelFormat(),
++                                              buffer->getStride());
+         handle = buffer->getNativeBuffer()->handle;
+     }
+ 
+@@ -1117,6 +1126,7 @@ Error AidlComposer::setLayerZOrder(Display display, Layer layer, uint32_t z) {
+     } else {
+         error = Error::BAD_DISPLAY;
+     }
++    mLayersZMap[layer] = static_cast<int32_t>(z);
+     mMutex.unlock_shared();
+     return error;
+ }
+@@ -1540,6 +1550,38 @@ Error AidlComposer::getClientTargetProperty(
+     return error;
+ }
+ 
++Error AidlComposer::setLayerName(Display, Layer layer, std::string name) {
++    if (!mWaydroidDisplay) {
++        return Error::UNSUPPORTED;
++    }
++    if (mLayersNameMap[static_cast<int32_t>(mLayersZMap[layer])] != name) {
++        mLayersNameMap[static_cast<int32_t>(mLayersZMap[layer])] = name;
++        return mWaydroidDisplay->setLayerName(static_cast<uint32_t>(mLayersZMap[layer]), name);
++    } else
++        return Error::NONE;
++}
++
++Error AidlComposer::setLayerHandleInfo(Display, Layer layer, const sp<GraphicBuffer>& buffer) {
++    Error error;
++    if (!mWaydroidDisplay)
++        return Error::UNSUPPORTED;
++
++    if (buffer.get() &&
++            mLayersHandleMap[mLayersZMap[layer]] != buffer->getNativeBuffer()->handle) {
++        mLayersHandleMap[mLayersZMap[layer]] = buffer->getNativeBuffer()->handle;
++        error = mWaydroidDisplay->setLayerHandleInfo(static_cast<uint32_t>(mLayersZMap[layer]),
++                                                    static_cast<uint32_t>(buffer->getPixelFormat()),
++                                                    buffer->getStride());
++        if (error != Error::NONE)
++            return error;
++
++        if (mWaydroidDisplay_1)
++            mWaydroidDisplay_1->setLayerSize(static_cast<uint32_t>(mLayersZMap[layer]),
++                                            buffer->getWidth(), buffer->getHeight());
++    }
++    return Error::NONE;
++}
++
+ Error AidlComposer::setLayerBrightness(Display display, Layer layer, float brightness) {
+     Error error = Error::NONE;
+     mMutex.lock_shared();
+diff --git a/services/surfaceflinger/DisplayHardware/AidlComposerHal.h b/services/surfaceflinger/DisplayHardware/AidlComposerHal.h
+index ea0e53a202..4cf843e7fe 100644
+--- a/services/surfaceflinger/DisplayHardware/AidlComposerHal.h
++++ b/services/surfaceflinger/DisplayHardware/AidlComposerHal.h
+@@ -197,6 +197,10 @@ public:
+     Error setDisplayBrightness(Display display, float brightness, float brightnessNits,
+                                const DisplayBrightnessOptions& options) override;
+ 
++    // WaydroidDisplay HAL 1.0
++    virtual Error setLayerName(Display display, Layer layer, std::string name) override;
++    virtual Error setLayerHandleInfo(Display display, Layer layer, const sp<GraphicBuffer>& buffer) override;
++
+     // Composer HAL 2.4
+     Error getDisplayCapabilities(
+             Display display,
+@@ -305,6 +309,13 @@ private:
+     std::shared_ptr<AidlIComposer> mAidlComposer;
+     std::shared_ptr<AidlIComposerClient> mAidlComposerClient;
+     std::shared_ptr<AidlIComposerCallbackWrapper> mAidlComposerCallback;
++
++    sp<V1_0::IWaydroidDisplay> mWaydroidDisplay;
++    sp<V1_1::IWaydroidDisplay> mWaydroidDisplay_1;
++    sp<V1_2::IWaydroidDisplay> mWaydroidDisplay_2;
++    std::map<Layer, int32_t> mLayersZMap;
++    std::map<int32_t, std::string> mLayersNameMap;
++    std::map<int32_t, const native_handle_t*> mLayersHandleMap;
+ };
+ 
+ } // namespace android::Hwc2
+diff --git a/services/surfaceflinger/DisplayHardware/ComposerHal.h b/services/surfaceflinger/DisplayHardware/ComposerHal.h
+index bc067a0e5d..d7012fd2cb 100644
+--- a/services/surfaceflinger/DisplayHardware/ComposerHal.h
++++ b/services/surfaceflinger/DisplayHardware/ComposerHal.h
+@@ -252,6 +252,9 @@ public:
+     virtual Error setDisplayBrightness(Display display, float brightness, float brightnessNits,
+                                        const DisplayBrightnessOptions& options) = 0;
+ 
++    // WaydroidDisplay HAL 1.0
++    virtual Error setLayerName(Display display, Layer layer, std::string name) = 0;
++
+     // Composer HAL 2.4
+     virtual Error getDisplayCapabilities(Display display,
+                                          std::vector<V3_0::DisplayCapability>* outCapabilities) = 0;
+diff --git a/services/surfaceflinger/DisplayHardware/HWC2.cpp b/services/surfaceflinger/DisplayHardware/HWC2.cpp
+index 84f668d9df..6197e3f5a9 100644
+--- a/services/surfaceflinger/DisplayHardware/HWC2.cpp
++++ b/services/surfaceflinger/DisplayHardware/HWC2.cpp
+@@ -1030,6 +1030,18 @@ Error Layer::setBlockingRegion(const Region& region) {
+     return static_cast<Error>(intError);
+ }
+ 
++Error Layer::setLayerName(std::string name)
++{
++    auto intError = mComposer.setLayerName(mDisplay->getId(), mId, name);
++    return static_cast<Error>(intError);
++}
++
++Error Layer::setLayerHandleInfo(const sp<GraphicBuffer>& buffer)
++{
++    auto intError = mComposer.setLayerHandleInfo(mDisplay->getId(), mId, buffer);
++    return static_cast<Error>(intError);
++}
++
+ } // namespace impl
+ } // namespace HWC2
+ } // namespace android
+diff --git a/services/surfaceflinger/DisplayHardware/HWC2.h b/services/surfaceflinger/DisplayHardware/HWC2.h
+index de044e0b76..1ae5b38309 100644
+--- a/services/surfaceflinger/DisplayHardware/HWC2.h
++++ b/services/surfaceflinger/DisplayHardware/HWC2.h
+@@ -353,6 +353,9 @@ public:
+     // AIDL HAL
+     [[nodiscard]] virtual hal::Error setBrightness(float brightness) = 0;
+     [[nodiscard]] virtual hal::Error setBlockingRegion(const android::Region& region) = 0;
++
++    // WaydroidDisplay HAL 1.0
++    [[clang::warn_unused_result]] virtual hal::Error setLayerName(std::string name) = 0;
+ };
+ 
+ namespace impl {
+@@ -404,6 +407,9 @@ public:
+     hal::Error setBrightness(float brightness) override;
+     hal::Error setBlockingRegion(const android::Region& region) override;
+ 
++    // WaydroidDisplay HAL 1.0
++    hal::Error setLayerName(std::string name) override;
++
+ private:
+     // These are references to data owned by HWComposer, which will outlive
+     // this HWC2::Layer, so these references are guaranteed to be valid for
+diff --git a/services/surfaceflinger/DisplayHardware/HidlComposerHal.cpp b/services/surfaceflinger/DisplayHardware/HidlComposerHal.cpp
+index 12ab2c284a..d968447598 100644
+--- a/services/surfaceflinger/DisplayHardware/HidlComposerHal.cpp
++++ b/services/surfaceflinger/DisplayHardware/HidlComposerHal.cpp
+@@ -309,6 +309,8 @@ void HidlComposer::registerCallback(const sp<IComposerCallback>& callback) {
+     if (!ret.isOk()) {
+         ALOGE("failed to register IComposerCallback");
+     }
++
++    mWaydroidDisplay = IWaydroidDisplay::getService();
+ }
+ 
+ Error HidlComposer::executeCommands(Display) {
+@@ -384,6 +386,7 @@ Error HidlComposer::createLayer(Display display, Layer* outLayer) {
+ }
+ 
+ Error HidlComposer::destroyLayer(Display display, Layer layer) {
++    mLayersZMap.erase(layer);
+     auto ret = mClient->destroyLayer(display, layer);
+     return unwrapRet(ret);
+ }
+@@ -615,6 +618,10 @@ Error HidlComposer::setClientTarget(Display display, uint32_t slot, const sp<Gra
+ 
+     const native_handle_t* handle = nullptr;
+     if (target.get()) {
++        if (mWaydroidDisplay)
++            mWaydroidDisplay->setTargetLayerHandleInfo(static_cast<uint32_t>(target->getPixelFormat()), target->getStride());
++        if (mWaydroidDisplay_1)
++            mWaydroidDisplay_1->setTargetLayerSize(target->getWidth(), target->getHeight());
+         handle = target->getNativeBuffer()->handle;
+     }
+ 
+@@ -730,6 +737,9 @@ Error HidlComposer::setLayerBuffer(Display display, Layer layer, uint32_t slot,
+ 
+     const native_handle_t* handle = nullptr;
+     if (buffer.get()) {
++        if (mWaydroidDisplay)
++            mWaydroidDisplay->setLayerHandleInfo(mLayersZMap[layer], buffer->getPixelFormat(),
++                                              buffer->getStride());
+         handle = buffer->getNativeBuffer()->handle;
+     }
+ 
+@@ -885,6 +895,7 @@ Error HidlComposer::setLayerZOrder(Display display, Layer layer, uint32_t z) {
+     mWriter.selectDisplay(display);
+     mWriter.selectLayer(layer);
+     mWriter.setLayerZOrder(z);
++    mLayersZMap[layer] = z;
+     return Error::NONE;
+ }
+ 
+@@ -1407,6 +1418,17 @@ Error HidlComposer::getClientTargetProperty(
+     outClientTargetProperty->dimmingStage = DimmingStage::NONE;
+     return Error::NONE;
+ }
++ 
++Error HidlComposer::setLayerName(Display, Layer layer, std::string name) {
++    if (!mWaydroidDisplay) {
++        return Error::UNSUPPORTED;
++    }
++    if (mLayersNameMap[mLayersZMap[layer]] != name) {
++        mLayersNameMap[mLayersZMap[layer]] = name;
++        return mWaydroidDisplay->setLayerName(mLayersZMap[layer], name);
++    } else
++        return Error::NONE;
++}
+ 
+ Error HidlComposer::setLayerBrightness(Display, Layer, float) {
+     return Error::NONE;
+diff --git a/services/surfaceflinger/DisplayHardware/HidlComposerHal.h b/services/surfaceflinger/DisplayHardware/HidlComposerHal.h
+index d78bfb7c6b..6a358cdec4 100644
+--- a/services/surfaceflinger/DisplayHardware/HidlComposerHal.h
++++ b/services/surfaceflinger/DisplayHardware/HidlComposerHal.h
+@@ -300,6 +300,10 @@ public:
+     Error setDisplayBrightness(Display display, float brightness, float brightnessNits,
+                                const DisplayBrightnessOptions& options) override;
+ 
++    // WaydroidDisplay HAL 1.0
++    virtual Error setLayerName(Display display, Layer layer, std::string name) override;
++    virtual Error setLayerHandleInfo(Display display, Layer layer, const sp<GraphicBuffer>& buffer) override;
++
+     // Composer HAL 2.4
+     Error getDisplayCapabilities(
+             Display display,
+@@ -385,6 +389,13 @@ private:
+     static const constexpr uint32_t kMaxLayerBufferCount = BufferQueue::NUM_BUFFER_SLOTS + 1;
+     CommandWriter mWriter;
+     CommandReader mReader;
++
++    sp<V1_0::IWaydroidDisplay> mWaydroidDisplay;
++    sp<V1_1::IWaydroidDisplay> mWaydroidDisplay_1;
++    sp<V1_2::IWaydroidDisplay> mWaydroidDisplay_2;
++    std::map<Layer, int32_t> mLayersZMap;
++    std::map<int32_t, std::string> mLayersNameMap;
++    std::map<int32_t, const native_handle_t*> mLayersHandleMap;
+ };
+ 
+ } // namespace android::Hwc2
+-- 
+2.55.0
+

@@ -1,0 +1,28 @@
+From 4223980dc0fd8fe06075739168ff1935a4b10a1a Mon Sep 17 00:00:00 2001
+From: Franz-Josef Haider <frajo@frajo.fi>
+Date: Mon, 24 Aug 2026 18:57:44 +0300
+Subject: [PATCH 1/1] Lepton: Ignore security_policyvers.
+
+Change-Id: Ie148ddcfe484df0517831f15356e37f5176351cc
+---
+ RuntimeInfo-target.cpp | 4 +++-
+ 1 file changed, 3 insertions(+), 1 deletion(-)
+
+diff --git a/RuntimeInfo-target.cpp b/RuntimeInfo-target.cpp
+index 453be56..ca35c0a 100644
+--- a/RuntimeInfo-target.cpp
++++ b/RuntimeInfo-target.cpp
+@@ -75,7 +75,9 @@ status_t RuntimeInfoFetcher::fetchCpuInfo(RuntimeInfo::FetchFlags) {
+ status_t RuntimeInfoFetcher::fetchKernelSepolicyVers(RuntimeInfo::FetchFlags) {
+     int pv;
+ #ifdef LIBVINTF_TARGET
+-    pv = security_policyvers();
++    // Lepton: Ignored
++    pv = android::base::GetIntProperty("ro.build.version.sdk", 0);
++    // pv = security_policyvers();
+ #else
+     pv = 0;
+ #endif
+-- 
+2.55.0
+

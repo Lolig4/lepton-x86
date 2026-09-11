@@ -1,0 +1,45 @@
+From 4487d88740a45b104d1709a6f72c089501e4ece6 Mon Sep 17 00:00:00 2001
+From: Franz-Josef Haider <frajo@frajo.fi>
+Date: Tue, 24 Feb 2026 23:35:38 +0200
+Subject: [PATCH 15/19] lepton: Make cmd hookable.
+
+Change-Id: I796210a3cba7271d71d81e06e548f4093f589816
+---
+ cmds/cmd/Android.bp | 7 ++++++-
+ cmds/cmd/cmd        | 2 ++
+ 2 files changed, 8 insertions(+), 1 deletion(-)
+ create mode 100755 cmds/cmd/cmd
+
+diff --git a/cmds/cmd/Android.bp b/cmds/cmd/Android.bp
+index 27ef78854c..7a0660aff4 100644
+--- a/cmds/cmd/Android.bp
++++ b/cmds/cmd/Android.bp
+@@ -39,7 +39,7 @@ cc_library_static {
+ }
+ 
+ cc_binary {
+-    name: "cmd",
++    name: "cmd_real",
+ 
+     srcs: ["main.cpp"],
+ 
+@@ -61,3 +61,8 @@ cc_binary {
+         "-DXP_UNIX",
+     ],
+ }
++
++sh_binary {
++    name: "cmd",
++    src: "cmd",
++}
+diff --git a/cmds/cmd/cmd b/cmds/cmd/cmd
+new file mode 100755
+index 0000000000..8dd81596b8
+--- /dev/null
++++ b/cmds/cmd/cmd
+@@ -0,0 +1,2 @@
++#!/system/bin/sh
++cmd_real "$@"
+-- 
+2.55.0
+

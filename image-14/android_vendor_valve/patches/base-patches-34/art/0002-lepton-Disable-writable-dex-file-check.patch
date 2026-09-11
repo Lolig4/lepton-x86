@@ -1,0 +1,36 @@
+From 72377fa6b38051d8119343a483d69eedd36472f4 Mon Sep 17 00:00:00 2001
+From: Franz-Josef Haider <frajo@frajo.fi>
+Date: Thu, 30 Jul 2026 15:27:15 +0300
+Subject: [PATCH 2/2] lepton: Disable writable dex file check.
+
+Change-Id: I4132e19ef341ea4f3fb15818983677774c2fea0a
+---
+ runtime/native/dalvik_system_DexFile.cc | 5 +++++
+ 1 file changed, 5 insertions(+)
+
+diff --git a/runtime/native/dalvik_system_DexFile.cc b/runtime/native/dalvik_system_DexFile.cc
+index f7f446542c..c3fddafc5a 100644
+--- a/runtime/native/dalvik_system_DexFile.cc
++++ b/runtime/native/dalvik_system_DexFile.cc
+@@ -377,6 +377,7 @@ static jobject DexFile_openDexFileNative(JNIEnv* env,
+     return nullptr;
+   }
+ 
++#if 0
+   if (isReadOnlyJavaDclChecked() && access(sourceName.c_str(), W_OK) == 0) {
+     LOG(ERROR) << "Attempt to load writable dex file: " << sourceName.c_str();
+     if (isReadOnlyJavaDclEnforced(env)) {
+@@ -387,6 +388,10 @@ static jobject DexFile_openDexFileNative(JNIEnv* env,
+       return nullptr;
+     }
+   }
++#else
++    (void)isReadOnlyJavaDclChecked;
++    (void)isReadOnlyJavaDclEnforced;
++#endif
+ 
+   std::vector<std::string> error_msgs;
+   const OatFile* oat_file = nullptr;
+-- 
+2.55.0
+

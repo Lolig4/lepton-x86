@@ -1,0 +1,44 @@
+From 72224c891eada5f38cdd0123d9da8110c9c02744 Mon Sep 17 00:00:00 2001
+From: Elliot Saba <sabae@valvesoftware.com>
+Date: Tue, 12 Nov 2024 15:32:01 +0000
+Subject: [PATCH 53/54] Disable lmkd connection to ActivityManager
+
+Change-Id: I8e8b3bc40010152ae1388d23b2b8cfb9e5a8aa52
+---
+ .../java/com/android/server/am/ProcessList.java     | 13 +++----------
+ 1 file changed, 3 insertions(+), 10 deletions(-)
+
+diff --git a/services/core/java/com/android/server/am/ProcessList.java b/services/core/java/com/android/server/am/ProcessList.java
+index f1e4ae5ceecd8..68d7887032fb8 100644
+--- a/services/core/java/com/android/server/am/ProcessList.java
++++ b/services/core/java/com/android/server/am/ProcessList.java
+@@ -678,8 +678,8 @@ public final class ProcessList {
+                         Slog.i(TAG, "Failed to connect to lmkd, retry after " +
+                                 LMKD_RECONNECT_DELAY_MS + " ms");
+                         // retry after LMKD_RECONNECT_DELAY_MS
+-                        sKillHandler.sendMessageDelayed(sKillHandler.obtainMessage(
+-                                KillHandler.LMKD_RECONNECT_MSG), LMKD_RECONNECT_DELAY_MS);
++                        //sKillHandler.sendMessageDelayed(sKillHandler.obtainMessage(
++                        //        KillHandler.LMKD_RECONNECT_MSG), LMKD_RECONNECT_DELAY_MS);
+                     }
+                     break;
+                 default:
+@@ -1486,14 +1486,7 @@ public final class ProcessList {
+ 
+     private static boolean writeLmkd(ByteBuffer buf, ByteBuffer repl) {
+         if (!sLmkdConnection.isConnected()) {
+-            // try to connect immediately and then keep retrying
+-            sKillHandler.sendMessage(
+-                    sKillHandler.obtainMessage(KillHandler.LMKD_RECONNECT_MSG));
+-
+-            // wait for connection retrying 3 times (up to 3 seconds)
+-            if (!sLmkdConnection.waitForConnection(3 * LMKD_RECONNECT_DELAY_MS)) {
+-                return false;
+-            }
++            return false;
+         }
+ 
+         return sLmkdConnection.exchange(buf, repl);
+-- 
+2.34.1
+

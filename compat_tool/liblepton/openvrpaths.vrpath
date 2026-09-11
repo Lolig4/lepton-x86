@@ -1,0 +1,17 @@
+{
+	"config" :
+	[
+		"/data/steamvr/config"
+	],
+	"external_drivers" : null,
+	"jsonid" : "vrpathreg",
+	"log" :
+	[
+		"/data/steamvr/logs"
+	],
+	"runtime" :
+	[
+		"/data/steamvr/runtime"
+	],
+	"version" : 1
+}

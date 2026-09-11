@@ -1,0 +1,27 @@
+From 58490016ef8e57b98d3cebbaf952a82bb886db51 Mon Sep 17 00:00:00 2001
+From: Franz-Josef Haider <frajo@frajo.fi>
+Date: Tue, 24 Mar 2026 23:57:50 +0200
+Subject: [PATCH 4/5] lepton: Make sure we bind mount data/media recursively
+ because we mount the media0 dir in.
+
+Change-Id: Id9a5491036ef4dcca4b5a00f4ade97ab7f16f086
+---
+ Utils.cpp | 2 +-
+ 1 file changed, 1 insertion(+), 1 deletion(-)
+
+diff --git a/Utils.cpp b/Utils.cpp
+index 696b0b48..cbe89628 100644
+--- a/Utils.cpp
++++ b/Utils.cpp
+@@ -559,7 +559,7 @@ status_t BindMount(const std::string& source, const std::string& target) {
+     if (UnmountTree(target) < 0) {
+         return -errno;
+     }
+-    if (TEMP_FAILURE_RETRY(mount(source.c_str(), target.c_str(), nullptr, MS_BIND, nullptr)) < 0) {
++    if (TEMP_FAILURE_RETRY(mount(source.c_str(), target.c_str(), nullptr, MS_BIND | MS_REC, nullptr)) < 0) {
+         PLOG(ERROR) << "Failed to bind mount " << source << " to " << target;
+         return -errno;
+     }
+-- 
+2.55.0
+

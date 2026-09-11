@@ -1,0 +1,36 @@
+From 43047f9a1a35517a4c64bf5cc0e541ee77c3a34c Mon Sep 17 00:00:00 2001
+From: Jeremy Selan <jeremys@valvesoftware.com>
+Date: Tue, 2 Apr 2024 17:19:32 -0700
+Subject: [PATCH 1/1] disable security check on grantRuntimePermission
+
+This allows all permissions to be settable via command-line (or API), even those that
+traditionally require user intervention like MANAGE_EXTERNAL_STORAGE.
+
+Change-Id: I51a2268611b6c8125ffd986fb78b38bf51f3d99f
+---
+ .../java/com/android/server/pm/permission/BasePermission.java   | 2 ++
+ 1 file changed, 2 insertions(+)
+
+diff --git a/services/core/java/com/android/server/pm/permission/BasePermission.java b/services/core/java/com/android/server/pm/permission/BasePermission.java
+index 354f5b9a8bd..dc22b6e98a1 100644
+--- a/services/core/java/com/android/server/pm/permission/BasePermission.java
++++ b/services/core/java/com/android/server/pm/permission/BasePermission.java
+@@ -442,6 +442,7 @@ public final class BasePermission {
+ 
+     public void enforceDeclaredUsedAndRuntimeOrDevelopment(AndroidPackage pkg,
+             PackageSetting pkgSetting) {
++        /*
+         final PermissionsState permsState = pkgSetting.getPermissionsState();
+         int index = pkg.getRequestedPermissions().indexOf(name);
+         if (!permsState.hasRequestedPermission(name) && index == -1) {
+@@ -452,6 +453,7 @@ public final class BasePermission {
+             throw new SecurityException("Permission " + name + " requested by "
+                     + pkg.getPackageName() + " is not a changeable permission type");
+         }
++        */
+     }
+ 
+     private static BasePermission findPermissionTree(
+-- 
+2.25.1
+

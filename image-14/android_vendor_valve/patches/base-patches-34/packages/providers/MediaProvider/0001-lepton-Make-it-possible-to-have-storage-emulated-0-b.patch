@@ -1,0 +1,67 @@
+From 7df63cf223fdb512e465c2409d080223c380ba21 Mon Sep 17 00:00:00 2001
+From: Franz-Josef Haider <frajo@frajo.fi>
+Date: Thu, 6 Aug 2026 19:50:25 +0300
+Subject: [PATCH 1/1] lepton: Make it possible to have /storage/emulated/0 be a
+ symlink.
+
+Change-Id: I750e63dfb02bfa795f98b4aa45f70713feed9c30
+---
+ jni/FuseDaemon.cpp | 35 +++++++++++++++++++++++++++++++++++
+ 1 file changed, 35 insertions(+)
+
+diff --git a/jni/FuseDaemon.cpp b/jni/FuseDaemon.cpp
+index 2bec167f5..9e780289f 100644
+--- a/jni/FuseDaemon.cpp
++++ b/jni/FuseDaemon.cpp
+@@ -2279,6 +2279,40 @@ static void pf_fallocate(fuse_req_t req, fuse_ino_t ino, int mode,
+ }
+ */
+ 
++static void pf_readlink(fuse_req_t req, fuse_ino_t ino) {
++    ATRACE_CALL();
++
++    struct fuse* fuse = get_fuse(req);
++    node* node = fuse->FromInode(ino);
++
++    if (!node) {
++        fuse_reply_err(req, ENOENT);
++        return;
++    }
++
++    const struct fuse_ctx* ctx = fuse_req_ctx(req);
++    const string path = node->BuildPath();
++
++    if (!is_app_accessible_path(fuse, path, ctx->uid)) {
++        fuse_reply_err(req, ENOENT);
++        return;
++    }
++
++    TRACE_NODE(node, req);
++
++    char target[PATH_MAX];
++
++    ssize_t len = readlink(path.c_str(), target, sizeof(target) - 1);
++    if (len < 0) {
++        fuse_reply_err(req, errno);
++        return;
++    }
++
++    target[len] = '\0';
++
++    fuse_reply_readlink(req, target);
++}
++
+ static struct fuse_lowlevel_ops ops{
+     .init = pf_init, .destroy = pf_destroy, .lookup = pf_lookup,
+     .lookup_postfilter = pf_lookup_postfilter, .forget = pf_forget, .getattr = pf_getattr,
+@@ -2308,6 +2342,7 @@ static struct fuse_lowlevel_ops ops{
+     /*.flock = pf_flock,*/
+             .fallocate = pf_fallocate, .readdirplus = pf_readdirplus,
+     /*.copy_file_range = pf_copy_file_range,*/
++    .readlink = pf_readlink,
+ };
+ 
+ static struct fuse_loop_config config = {
+-- 
+2.55.0
+

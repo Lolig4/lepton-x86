@@ -1,0 +1,67 @@
+From 980e1619d7a723eea1ac3818c5bb83833892fd09 Mon Sep 17 00:00:00 2001
+From: Mark Collins <mark@igalia.com>
+Date: Thu, 24 Apr 2025 14:31:08 +0000
+Subject: [PATCH 4/5] Disable UBWC support
+
+Since the host and guest run different drivers that have incompatible
+layouts for UBWC, they cannot share UBWC buffers without issues arising
+and so UBWC has to be disabled.
+---
+ gralloc/gr_utils.cpp | 34 +++++++---------------------------
+ 1 file changed, 7 insertions(+), 27 deletions(-)
+
+diff --git a/gralloc/gr_utils.cpp b/gralloc/gr_utils.cpp
+index 0c53e405dd..8bd45c1bd6 100644
+--- a/gralloc/gr_utils.cpp
++++ b/gralloc/gr_utils.cpp
+@@ -724,33 +724,7 @@ bool IsUBwcPISupported(int format, uint64_t usage) {
+   return false;
+ }
+ 
+-bool IsUBwcEnabled(int format, uint64_t usage) {
+-  // Allow UBWC, if client is using an explicitly defined UBWC pixel format.
+-  if (IsUBwcFormat(format)) {
+-    return true;
+-  }
+-
+-  // Allow UBWC, if an OpenGL client sets UBWC usage flag and GPU plus MDP
+-  // support the format. OR if a non-OpenGL client like Rotator, sets UBWC
+-  // usage flag and MDP supports the format.
+-  if (((usage & GRALLOC_USAGE_PRIVATE_ALLOC_UBWC) ||
+-       (usage & GRALLOC_USAGE_PRIVATE_ALLOC_UBWC_PI) ||
+-       (usage & BufferUsage::COMPOSER_CLIENT_TARGET))
+-        && IsUBwcSupported(format)) {
+-    bool enable = true;
+-    // Query GPU for UBWC only if buffer is intended to be used by GPU.
+-    if ((usage & BufferUsage::GPU_TEXTURE) || (usage & BufferUsage::GPU_RENDER_TARGET)) {
+-      if (AdrenoMemInfo::GetInstance()) {
+-        enable = AdrenoMemInfo::GetInstance()->IsUBWCSupportedByGPU(format);
+-      }
+-    }
+-
+-    // Allow UBWC, only if CPU usage flags are not set
+-    if (enable && !(CpuCanAccess(usage))) {
+-      return true;
+-    }
+-  }
+-
++bool IsUBwcEnabled(int, uint64_t) {
+   return false;
+ }
+ 
+@@ -1716,6 +1690,12 @@ void GetRGBPlaneInfo(const BufferInfo &info, int32_t format, int32_t width, int3
+   plane_info->stride = width;
+   plane_info->stride_bytes = width * plane_info->step;
+   plane_info->scanlines = height;
++
++  if (plane_info->offset > 0) {
++    ALOGE("%s: offset > 0 for format %d, size %d, offset %d, step %d, stride %d, scanlines %d", __FUNCTION__,
++          format, plane_info->size, plane_info->offset, plane_info->step, plane_info->stride,
++          plane_info->scanlines);
++  }
+ }
+ 
+ // TODO(tbalacha): tile vs ubwc -- may need to find a diff way to differentiate
+-- 
+2.48.1
+

@@ -1,0 +1,21 @@
+From 58c166197444c5a92317a2e90b1d3aa7ed192823 Mon Sep 17 00:00:00 2001
+From: Franz-Josef Haider <frajo@frajo.fi>
+Date: Wed, 31 Dec 2025 08:23:15 +0200
+Subject: [PATCH 1/1] ffmpeg: android: add armv8-2a config mk symlink.
+
+---
+ android/config-aarch64-armv8-2a.mak | 1 +
+ 1 file changed, 1 insertion(+)
+ create mode 120000 android/config-aarch64-armv8-2a.mak
+
+diff --git a/android/config-aarch64-armv8-2a.mak b/android/config-aarch64-armv8-2a.mak
+new file mode 120000
+index 0000000000..2fb7059fcd
+--- /dev/null
++++ b/android/config-aarch64-armv8-2a.mak
+@@ -0,0 +1 @@
++config-aarch64-armv8-a.mak
+\ No newline at end of file
+-- 
+2.52.0
+

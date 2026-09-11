@@ -1,0 +1,18 @@
+From d4a0d7bf1d4b1b364a6267e349a255a7a3d30d27 Mon Sep 17 00:00:00 2001
+From: Elliot Saba <sabae@valvesoftware.com>
+Date: Tue, 12 Nov 2024 15:32:10 +0000
+Subject: [PATCH 54/54] Disable PrintSpooler
+
+Change-Id: I2a22641df3dc3006dd0482f0e0d0be18732b77e7
+---
+ packages/PrintSpooler/{Android.bp => Android.bp.disabled} | 0
+ 1 file changed, 0 insertions(+), 0 deletions(-)
+ rename packages/PrintSpooler/{Android.bp => Android.bp.disabled} (100%)
+
+diff --git a/packages/PrintSpooler/Android.bp b/packages/PrintSpooler/Android.bp.disabled
+similarity index 100%
+rename from packages/PrintSpooler/Android.bp
+rename to packages/PrintSpooler/Android.bp.disabled
+-- 
+2.34.1
+

@@ -1,0 +1,91 @@
+From 5f24d4a944b19b2b342ecd676aa4c7eea3461a00 Mon Sep 17 00:00:00 2001
+From: Madhushan Nishantha <jlmadushan@gmail.com>
+Date: Wed, 20 Oct 2021 19:46:11 +0200
+Subject: [PATCH 02/22] (waydroid) disable app dir isolation using SELinux
+
+Change-Id: Ifc0495a4795ab64f646abd4987819fa367b304f4
+---
+ core/jni/Android.bp                         |  1 +
+ core/jni/com_android_internal_os_Zygote.cpp | 20 ++++++++++++++------
+ 2 files changed, 15 insertions(+), 6 deletions(-)
+
+diff --git a/core/jni/Android.bp b/core/jni/Android.bp
+index 76e71380017c..2af73909827b 100644
+--- a/core/jni/Android.bp
++++ b/core/jni/Android.bp
+@@ -49,6 +49,7 @@ cc_library_shared_for_libandroid_runtime {
+         "-Wno-unused-parameter",
+         "-Wunused",
+         "-Wunreachable-code",
++        "-Wno-unused-function",
+     ],
+ 
+     cppflags: ["-Wno-conversion-null"],
+diff --git a/core/jni/com_android_internal_os_Zygote.cpp b/core/jni/com_android_internal_os_Zygote.cpp
+index ee55a3699253..5238a09bfd7e 100644
+--- a/core/jni/com_android_internal_os_Zygote.cpp
++++ b/core/jni/com_android_internal_os_Zygote.cpp
+@@ -1271,6 +1271,8 @@ static void isolateAppData(JNIEnv* env, const std::vector<std::string>& merged_d
+ 
+   // Get the "u:object_r:system_userdir_file:s0" security context.  This can be
+   // gotten from several different places; we use /data/user.
++  // Disabled in Lepton
++  /*
+   char* dataUserdirContext = nullptr;
+   if (getfilecon(internalCePath, &dataUserdirContext) < 0) {
+     fail_fn(CREATE_ERROR("Unable to getfilecon on %s %s", internalCePath,
+@@ -1282,6 +1284,7 @@ static void isolateAppData(JNIEnv* env, const std::vector<std::string>& merged_d
+   if (getfilecon("/data/misc", &dataFileContext) < 0) {
+     fail_fn(CREATE_ERROR("Unable to getfilecon on /data/misc %s", strerror(errno)));
+   }
++  */
+ 
+   MountAppDataTmpFs(internalLegacyCePath, fail_fn);
+   MountAppDataTmpFs(internalCePath, fail_fn);
+@@ -1388,7 +1391,8 @@ static void isolateAppData(JNIEnv* env, const std::vector<std::string>& merged_d
+   // the file operations on tmpfs. If we set the label when we mount
+   // tmpfs, SELinux will not happy as we are changing system_data_files.
+   // Relabel dir under /data/user, including /data/user/0
+-  relabelSubdirs(internalCePath, dataFileContext, fail_fn);
++  // Disabled in Lepton
++  /*relabelSubdirs(internalCePath, dataFileContext, fail_fn);*/
+ 
+   // Relabel /data/user
+   relabelDir(internalCePath, dataUserdirContext, fail_fn);
+@@ -1396,8 +1400,9 @@ static void isolateAppData(JNIEnv* env, const std::vector<std::string>& merged_d
+   // Relabel /data/data
+   relabelDir(internalLegacyCePath, dataFileContext, fail_fn);
+ 
++  // Disabled in Lepton
+   // Relabel subdirectories of /data/user_de
+-  relabelSubdirs(internalDePath, dataFileContext, fail_fn);
++  /*relabelSubdirs(internalDePath, dataFileContext, fail_fn);*/
+ 
+   // Relabel /data/user_de
+   relabelDir(internalDePath, dataUserdirContext, fail_fn);
+@@ -1413,15 +1418,18 @@ static void isolateAppData(JNIEnv* env, const std::vector<std::string>& merged_d
+     auto cePath = StringPrintf("%s/user", volPath.c_str());
+     auto dePath = StringPrintf("%s/user_de", volPath.c_str());
+ 
+-    relabelSubdirs(cePath.c_str(), dataFileContext, fail_fn);
++    // Disabled in Lepton
++    /*relabelSubdirs(cePath.c_str(), dataFileContext, fail_fn);*/
+     relabelDir(cePath.c_str(), dataUserdirContext, fail_fn);
+-    relabelSubdirs(dePath.c_str(), dataFileContext, fail_fn);
++    // Disabled in Lepton
++    /*relabelSubdirs(dePath.c_str(), dataFileContext, fail_fn);*/
+     relabelDir(dePath.c_str(), dataUserdirContext, fail_fn);
+   }
+   closedir(dir);
+ 
+-  freecon(dataUserdirContext);
+-  freecon(dataFileContext);
++  // Disabled in Lepton
++  /*freecon(dataUserdirContext);
++  freecon(dataFileContext);*/
+ }
+ 
+ /**
+-- 
+2.55.0
+

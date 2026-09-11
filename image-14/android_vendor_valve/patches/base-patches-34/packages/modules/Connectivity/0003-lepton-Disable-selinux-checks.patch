@@ -1,0 +1,39 @@
+From 88cc8791412034c85a2e8db005347e7e721b395c Mon Sep 17 00:00:00 2001
+From: Franz-Josef Haider <frajo@frajo.fi>
+Date: Tue, 30 Jun 2026 22:18:10 +0300
+Subject: [PATCH 3/4] lepton: Disable selinux checks.
+
+Change-Id: I29608d1e19151cba5a89f1cc1f054ab76a3ade2f
+---
+ .../com_android_server_connectivity_ClatCoordinator.cpp   | 8 +++++++-
+ 1 file changed, 7 insertions(+), 1 deletion(-)
+
+diff --git a/service/jni/com_android_server_connectivity_ClatCoordinator.cpp b/service/jni/com_android_server_connectivity_ClatCoordinator.cpp
+index c125bd6479..a6cf0956ff 100644
+--- a/service/jni/com_android_server_connectivity_ClatCoordinator.cpp
++++ b/service/jni/com_android_server_connectivity_ClatCoordinator.cpp
+@@ -61,6 +61,12 @@ static void verifyPerms(const char * const path,
+                         const mode_t mode, const uid_t uid, const gid_t gid,
+                         const char * const ctxt,
+                         const verify vtype) {
++    (void)mode;
++    (void)uid;
++    (void)gid;
++    (void)ctxt;
++    (void)vtype;
++#if 0
+     struct stat s = {};
+ 
+     if (lstat(path, &s)) ALOGF("lstat '%s' errno=%d", path, errno);
+@@ -72,7 +78,7 @@ static void verifyPerms(const char * const path,
+     int v = lgetxattr(path, "security.selinux", &b, sizeof(b));
+     if (v < 0) ALOGF("lgetxattr '%s' errno=%d", path, errno);
+     if (strncmp(ctxt, b, sizeof(b))) ALOGF("context of '%s' is '%s' != '%s'", path, b, ctxt);
+-
++#endif
+     int fd = -1;
+ 
+     switch (vtype) {
+-- 
+2.55.0
+

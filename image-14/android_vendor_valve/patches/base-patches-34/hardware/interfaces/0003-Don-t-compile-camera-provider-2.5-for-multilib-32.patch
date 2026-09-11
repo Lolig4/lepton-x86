@@ -1,0 +1,27 @@
+From 77e52b44d5d63308685896c3fc8c053c5923446d Mon Sep 17 00:00:00 2001
+From: Joshua Ashton <joshua@froggi.es>
+Date: Wed, 21 Feb 2024 03:58:24 +0000
+Subject: [PATCH 3/3] Don't compile camera provider 2.5 for multilib 32
+
+We only want to target 64-bit ARM
+
+Change-Id: Id719bb92ad3bde61f8636e6d336f37a3a8ccb44e
+---
+ camera/provider/2.5/default/Android.bp | 1 -
+ 1 file changed, 1 deletion(-)
+
+diff --git a/camera/provider/2.5/default/Android.bp b/camera/provider/2.5/default/Android.bp
+index ae0c2f955d..bc461a2a48 100644
+--- a/camera/provider/2.5/default/Android.bp
++++ b/camera/provider/2.5/default/Android.bp
+@@ -164,7 +164,6 @@ cc_binary {
+     proprietary: true,
+     relative_install_path: "hw",
+     srcs: ["external-service.cpp"],
+-    compile_multilib: "32",
+     init_rc: ["android.hardware.camera.provider@2.5-external-service.rc"],
+     shared_libs: [
+         "android.hardware.camera.common@1.0",
+-- 
+2.55.0
+

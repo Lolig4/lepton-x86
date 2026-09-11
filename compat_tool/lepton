@@ -1,0 +1,571 @@
+#!/bin/bash
+
+export LD_PRELOAD=
+
+set -euo pipefail
+
+# We always operate on commands like `start test`
+COMMAND="${1:-help}"
+LEPTON_CONTEXT="${2:-}"
+
+# Set this if something is horribly wrong
+if [[ "${LEPTON_DEBUG:-false}" != "false" ]]; then
+    set -x
+fi
+
+function is_start()
+{
+    [[ "${COMMAND}" == "start" ]] || [[ "${COMMAND}" == "waitforexitandrun" ]]
+}
+
+if is_start && [[ -z "${IS_PARENT:-}" ]]; then
+    export IS_PARENT=true
+    exec setpgid --foreground "$0" "$@"
+fi
+
+if [[ "${TERM}" == "dumb" ]]; then
+    _RED=""
+    _GREEN=""
+    _PLAIN=""
+else
+    _RED=$(tput setaf 1)
+    _GREEN=$(tput setaf 2)
+    _PLAIN=$(tput sgr0)
+fi
+
+# We need to ensure that catatonit is running, and we don't want it to be under our process tree.
+# If we accidentally start it via `podman start`, then we end up with a `catatonit` that lives
+# underneath the `reaper` process, which causes both to wait for the other to die.  Not great.
+# We instead use `podman.service` to launch a catatonit that should get parented under the
+# `systemd --user`` instance.  Note that `podman.service` doesn't fail if `catatonit -P` dies
+# or whatnot, so we actually need to _restart_ it if we don't see `catatonit` underneath it.
+# We ignore errors here as we'll cleanup catatonit running under the reaper at teardown.
+CATATONIT_PID="$(pgrep -o catatonit 2>/dev/null || true)"
+if systemctl --user is-system-running >/dev/null && [[ -z "${CATATONIT_PID}" ]]; then
+    podman system migrate 2>/dev/null || true
+    # If it's not, let's start podman.service if it's not already running.  This should get catatonit
+    # going, which should settle us from here on out.
+    if ! systemctl --user is-active podman.service 2>/dev/null >/dev/null; then
+        systemctl --user reset-failed podman.service 2>/dev/null || true
+        systemctl --user start podman.service || true
+    else
+        # If podman.service was already running but catatonit wasn't, something was borked, let's restart
+        # podman.service to try and get it running properly.
+        systemctl --user restart podman.service || true
+    fi
+fi
+
+# This lock guards against multiple commands running at the same time
+# which would be problematic for e.g. start due to the port assignments.
+exec {LEPTON_LOCKFD}>/tmp/lepton.lock
+if ! flock --timeout 10 "${LEPTON_LOCKFD}"; then
+    echo "WARNING: Failed to acquire the lepton lock (initial)."
+fi
+
+# Automatically set the context if we're part of a Steam launch
+if [[ -n "${SteamAppId:-}" ]] then
+    LEPTON_CONTEXT="steamlaunch-${SteamAppId}"
+fi
+
+
+# Special-case dev app
+if [[ "${SteamAppId:-}" == "3056000" ]] || ( is_start && [[ -z "${LEPTON_CONTEXT}" ]] ); then
+    LEPTON_CONTEXT="dev"
+    unset SteamAppId
+    unset STEAM_COMPAT_INSTALL_PATH
+    unset STEAM_COMPAT_DATA_PATH
+fi
+
+SCRIPT_DIR=$( cd -- "$( dirname -- "${BASH_SOURCE[0]}" )" &> /dev/null && pwd )
+source "${SCRIPT_DIR}/liblepton/liblepton.sh"
+
+case "${COMMAND}" in
+    # This avoids starting up zygote, it gets you into a container at the earliest possible moment.
+    # There's a bit of special setup that must be done for that to happen, it's not useful unless
+    # you're debugging something extremely early in the `init` process.
+    start_early_debug)
+        LEPTON_CONTEXT="${LEPTON_CONTEXT:-early_debug}"
+
+        create_prefix
+
+        #autobake
+        setup_container
+        start_early_debug_container
+        ;;
+    start|waitforexitandrun)
+        function kill_descendants()
+        {
+            # If catatonit was accidentally started by one of our podman commands, kill it here.  We'll try to
+            # get it started with `podman.service` on the next lepton launch.
+            local CATATONIT_PID="$(pgrep -o catatonit 2>/dev/null || true)"
+            if kill -0 "${CATATONIT_PID}" 2>/dev/null; then
+                local LEPTON_PARENT_PID="$(parent_pid "$$" || true)"
+
+                if is_ancestor_of "${LEPTON_PARENT_PID}" "${CATATONIT_PID}"; then
+                    kill "${CATATONIT_PID}" 2>/dev/null || true
+                fi
+            fi
+
+            # Make sure to kill any lingering children which may remain
+            println "Killing descendant processes..."
+            kill -TERM -- -$$
+            println "Done!"
+        }
+        trap "kill_descendants" INT TERM ERR
+
+        determine_app --start "${3:-}"
+
+        log_to_file
+
+        # If we haven't been able to determine the APP_PATH using the above
+        # determine_app() it means we're being launched from steam instead of
+        # from a shell.
+        # In this case APP_PATH will be unset, which will later get initialized
+        # by get_apk_path(). But that decides it based on which apks exist in the
+        # application folder. Therefore if this is a launch of an app which has
+        # multiple *.apk's, we instead set APP_PATH to the *.apk that steam gave us
+        # on the commandline.
+        # NOTE: Doing this here and not in determine_app to make sure the messages
+        # appear in our logfile.
+        if [[ -z "${APP_PATH}" ]] && [[ "${3:-}" == *".apk" ]]; then
+            export APP_PATH="$(realpath "${3:-}")"
+            println "Setting APP_PATH to ${APP_PATH}"
+        fi
+        # Make sure to set APP_PACKAGE_ID globally here, otherwise we end up calling
+        # extract_app_id multiple times later.
+        export APP_PACKAGE_ID="$(get_app_id)"
+
+        if is_steamlaunch || [[ "${LEPTON_CONTEXT}" == *.apk ]]; then
+            if [[ -z "${APP_PACKAGE_ID}" ]]; then
+                println "No package id found. Maybe it's not an apk?"
+                exit 1
+            fi
+        fi
+
+        if [[ -n "${APP_PATH:-}" ]]; then
+            print_apk_info "${APP_PATH}"
+        fi
+
+        logcat_debug_clear
+        logcat_debug "launch-request"
+
+        # Sanity-check on .apk
+        if is_app; then
+            if [[ -z "$(get_app_id)" ]] || [[ -z "$(get_app_activity)" ]]; then
+                println "Early-exit due to malformed .apk metadata" >&2
+                exit 1
+            fi
+        fi
+
+        ensure_permissions_ok
+
+        autobake
+        #preload_app_resources
+
+        # This must happen before any call to is_app_baked
+        APP_OR_DEPOT_CHANGED=false
+        if is_app; then
+            if [[ "$(get_app_hash)" != "$(extract_app_hash)" ]]; then
+                echo "The app has changed, baked app data will be cleared."
+                APP_OR_DEPOT_CHANGED=true
+            elif [[ "$(get_app_last_depot_version)" != "$(extract_app_last_depot_version)" ]]; then
+                echo "The depot has changed, baked app data will be cleared."
+                APP_OR_DEPOT_CHANGED=true
+            fi
+        fi
+
+        # We need to do this before starting/setting up the container
+        # otherwise we would delete our media0 storage.
+        if is_app && { ! is_app_baked || [ "${APP_OR_DEPOT_CHANGED}" != "false" ]; }; then
+            clear_baked_app_data "app or depot changed"
+        fi
+
+        setup_container
+        logcat_debug "post-setup"
+        generate_app_launch_rc
+        generate_zygote_launch_rc
+
+        logcat_debug "pre-start-container"
+        start_container
+
+        function teardown()
+        {
+            # Prevent double-signal handling
+            trap "" INT TERM ERR
+
+            # If something fails here, just keep trucking.
+            set +e
+            set +o pipefail
+
+            if strace_enabled; then
+                println "Copying strace log to $(logcat_debug_dir)"
+                extract_strace "$(logcat_debug_dir)"
+            fi
+
+            # If the user asked for us to dump a logcat, OR we exited after less than 30 seconds
+            local EARLY_SHUTDOWN=0
+            if (( "$(date "+%s")" < "${app_start_time} + 30" )); then
+                EARLY_SHUTDOWN=1
+            fi
+            if [[ -n "${LEPTON_DUMP_LOGCAT:-}" ]] || [[ "${EARLY_SHUTDOWN}" == "1" ]]; then
+                println "Dumping logcat to $(logcat_debug_dir)"
+                dump_logcat "$(logcat_debug_dir)"
+
+                if [[ "${EARLY_SHUTDOWN}" == "1" ]]; then
+                    # Clearing baked app data in this case since something might be wrong.
+                    clear_baked_app_data "early exit"
+                fi
+            fi
+
+            kill_container "${LEPTON_CONTEXT}" --quiet
+            logcat_debug "killed"
+
+            # Define `LEPTON_KEEP_CONTEXT` to avoid cleanup
+            if [[ -z "${LEPTON_KEEP_CONTEXT:-}" ]]; then
+                cleanup_container
+            fi
+            remove_prefix
+
+            if ! is_steamlaunch; then
+                remove_context "${LEPTON_CONTEXT}"
+                clear_baked_app_data "non steamlaunch container"
+            fi
+
+            log_moved_dirs "${MOVED_INACCESSIBLE}"
+
+            kill_descendants
+
+            trap "-" INT TERM ERR
+        }
+        function handle_signal()
+        {
+            println "Signal ${1} received, killing container..."
+            teardown
+        }
+
+        app_start_time="$EPOCHSECONDS"
+        trap "handle_signal SIGINT" INT
+        trap "handle_signal SIGTERM" TERM
+        trap "handle_signal ERR" ERR
+        logcat_debug "post-start-container"
+
+        if ! is_steamlaunch && ! is_app; then
+            continue_boot_after_bake
+        elif ! is_app_baked; then
+            if install_app; then
+                update_baked_app_metadata
+                # If the app is not baked yet, the container will wait for a
+                # property.
+                continue_boot_after_bake
+            fi
+        fi
+
+        auto_install_apps
+
+        # perfetto
+        if steamos_devmode_enabled; then
+            start_traced_probes
+        fi
+
+        wait_for_container
+        teardown
+        ;;
+    sysbake)
+        if [[ -z "${GITLAB_CI:-}" ]]; then
+            echo "sysbake is only allowed during CI."
+            exit 1
+        fi
+
+        LEPTON_CONTEXT="${COMMAND}"
+
+        create_prefix
+
+        # Identify in our log lines that this is a bake
+        prepend_subsys "${LEPTON_CONTEXT}"
+        if [[ -n "${BAKED_SYSTEM_DATA_DIR}" ]]; then
+            wipe_baked_system_data
+        fi
+
+        cleanup_all
+
+        # Make sure we don't accidentally try to install apps during sysbake
+        unset SteamAppId
+        unset STEAM_COMPAT_INSTALL_PATH
+        unset STEAM_COMPAT_DATA_PATH
+
+        function teardown_and_cleanup()
+        {
+            dump_logcat "$(logcat_debug_dir)"
+            println "Logcat available at: $(logcat_debug_dir)"
+
+            cleanup_all --keep-logcats
+            kill_container "${LEPTON_CONTEXT}" --quiet
+            cleanup_container
+        }
+
+        println "Starting bake process..."
+        setup_container
+        start_container
+
+        # Make sure we cleanup properly if something goes wrong
+        trap "teardown_and_cleanup" INT TERM ERR
+
+        # We need to ensure that this file exists, it can take a little while to appear,
+        # especially problematic if we don't have the compile job above to wait a bit.
+        wait_for_file "$(data_mount_path)/system/packages.xml"
+
+        println "Waiting for com.android.systemui profile to be initialized..."
+        SYSTEMUI_PROFILE_DIR="$(data_mount_path)/misc/profiles/cur/0/com.android.systemui/"
+        while [[ ! -f "${SYSTEMUI_PROFILE_DIR}/primary.prof" ]]; do
+            echo "Waiting for com.android.systemui profile to initialize."
+            sleep 1
+        done
+        println "Finalizing bake process..."
+        kill_container "${LEPTON_CONTEXT}" --quiet
+        trap "-" INT TERM ERR
+
+        update_baked_system_data
+
+        println "Cleaning up..."
+        cleanup_container
+        remove_context "${LEPTON_CONTEXT}"
+        remove_prefix
+        ;;
+    shell|attach)
+        determine_app "${3:-}"
+        attach_container
+        ;;
+    exec|run)
+        determine_app "${3:-}"
+        if [[ "${3:-}" != *".apk" ]]; then
+            run_in_container "${@:3}"
+        else
+            run_in_container "${@:4}"
+        fi
+        ;;
+    stop|kill)
+        determine_app "${3:-}"
+        kill_container
+        ;;
+    kill_all)
+        kill_all
+        ;;
+    cleanup)
+        determine_app "${3:-}"
+        println "Cleaning up ${LEPTON_CONTEXT}..."
+        cleanup_container
+        ;;
+    cleanup_all)
+        cleanup_all
+        ;;
+    logcat)
+        determine_app "${3:-}"
+        if [[ "${3:-}" != *".apk" ]]; then
+            logcat_container "${@:3}"
+        else
+            logcat_container "${@:4}"
+        fi
+        ;;
+    logsetup)
+        determine_app "${3:-}"
+        unlock_lepton
+        logsetup
+        ;;
+    install_app)
+        if [[ ! -f "${3:-/this/path/does/not/exist}" ]]; then
+            die "Usage: $0 install_app <dev context> <path to apk> [--wait-for-debugger]"
+        fi
+        APP_ID="$(extract_app_id "${3}")"
+        APP_ACTIVITY="$(extract_app_activity "${3}" || true)"
+        install_app "${3}"
+        if [[ " $@ " == *" --wait-for-debugger "* ]] || debugger_wait_enabled; then
+            println "Setting ${APP_ID} to wait for debugger..."
+            podman_attach sh -c "$(debugger_wait_commands)"
+        fi
+
+        if [[ -n "${APP_ACTIVITY}" ]]; then
+            println "Automatically starting ${APP_ID}"
+            podman_attach sh -c "$(run_app_commands "${APP_ID}" "${APP_ACTIVITY}")"
+        else
+            println "Installation complete, no launchable activity found, so not launching"
+        fi
+        ;;
+    gdb_server)
+        PID="${3:-$(guess_app_pid)}"
+        start_gdb_server "${PID}"
+        ;;
+    lldb_server)
+        PID="${3:-$(guess_app_pid)}"
+        start_lldb_server "${PID}"
+        ;;
+    gdb_attach)
+        PID="${3:-$(guess_app_pid)}"
+        start_gdb_server "${PID}"
+        gdb_attach_to_server
+        ;;
+    lldb_attach)
+        PID="${3:-$(guess_app_pid)}"
+        start_lldb_server "${PID}"
+        lldb_attach_to_server
+        ;;
+    kill_gdb_server)
+        kill_gdb_server
+        ;;
+    kill_lldb_server)
+        kill_lldb_server
+        ;;
+    install_completions)
+        COMPLETIONS_PATH="${SCRIPT_DIR}/liblepton/completions.sh"
+        if grep -q "${COMPLETIONS_PATH}" "${HOME}/.bashrc"; then
+            die "Completions already installed!"
+        fi
+        cat >>"${HOME}/.bashrc" <<-EOF
+alias lepton="${SCRIPT_DIR}/lepton"
+[[ -n "\${PS1:-}" ]] && source "${COMPLETIONS_PATH}"
+EOF
+        println "Completions installed, run 'source ~/.bashrc' to load them into this shell"
+        ;;
+    ps|list_containers)
+        list_containers
+        ;;
+    bootchart)
+        LEPTON_CONTEXT=bootchart
+        LEPTON_DUMP_LOGCAT=true
+
+        create_prefix
+
+        logcat_debug_clear
+        setup_container
+
+        # Enable bootcharting and start the container
+        DATA_DIR="$(data_mount_path)"
+        mkdir -p "${DATA_DIR}/bootchart"
+        touch "${DATA_DIR}/bootchart/enabled"
+        start_container
+        logcat_debug "post-start_container"
+
+        # Now that we're booted, dump logcat then kill the container
+        dump_logcat "$(logcat_debug_dir)"
+        rm -f "${DATA_DIR}/bootchart/enabled"
+        cp -r /proc/$(container_pid)/root/data/bootchart/* "$(logcat_debug_dir)/"
+        kill_container "${LEPTON_CONTEXT}" --quiet
+
+        remove_prefix
+        remove_context "${LEPTON_CONTEXT}"
+
+        println "Bootchart data available at: $(logcat_debug_dir)"
+        ;;
+    # Used for testing
+    unreal_vr_test)
+        unlock_lepton
+        SteamAppId="3418470" \
+        STEAM_COMPAT_INSTALL_PATH="${LEPTON_DIR}/../../Unreal VR Test 🐸" \
+        STEAM_COMPAT_DATA_PATH="${LEPTON_DIR}/../../../compatdata/3418470" \
+        STEAM_COMPAT_SHADER_PATH="${LEPTON_DIR}/../../../shadercache/3418470" \
+        STEAM_FOSSILIZE_DUMP_PATH="${LEPTON_DIR}/../../../shadercache/3418470/fozpipelinesv6/steamapp_pipeline_cache" \
+        MESA_DISK_CACHE_SINGLE_FILE=1 \
+        "${LEPTON_ENTRYPOINT}" start
+        ;;
+    extract)
+        if [[ -z "${3:-}" ]]; then
+            die "Usage: $0 extract <context> <file path> <dest dir>"
+        fi
+        determine_app "${3:-}"
+        extract_file "${LEPTON_CONTEXT}" "${3}" "${4:-$(pwd)}"
+        ;;
+    perfetto)
+        PERFETTO_DIR="${LEPTON_DIR}/perfetto"
+        PERFETTO_CONFIG="system"
+        if [[ "${2:-}" == "--config="* ]]; then
+            PERFETTO_CONFIG="${2#--config=*}"
+            LEPTON_CONTEXT=${3:-}
+            determine_app "${4:-}"
+        else
+            determine_app "${3:-}"
+        fi
+        if [[ ! -f "${PERFETTO_CONFIG}" ]]; then
+            if [[ ! -f "${PERFETTO_DIR}/${PERFETTO_CONFIG}.cfg" ]]; then
+                die "Error: Perfetto config ${PERFETTO_CONFIG} does not exit!"
+            else
+                PERFETTO_CONFIG="${PERFETTO_DIR}/${PERFETTO_CONFIG}.cfg"
+            fi
+        fi
+        perfetto_capture "${LEPTON_CONTEXT}" "${PERFETTO_CONFIG}"
+        ;;
+    collect_logs)
+        collect_debug_logs
+        ;;
+    help)
+        println "Usage: $0 verb"
+        echo
+        println "Valid verbs with options:"
+        println "  ${_GREEN}start${_PLAIN} [context]"
+        println "  ${_GREEN}shell${_PLAIN} [context]"
+        println "  ${_GREEN}attach${_PLAIN} [context]"
+        println "  ${_GREEN}kill${_PLAIN} [context]"
+        println "  ${_GREEN}kill_all${_PLAIN}"
+        println "  ${_GREEN}cleanup${_PLAIN} [context]"
+        println "  ${_GREEN}cleanup_all${_PLAIN}"
+        println "  ${_GREEN}logcat${_PLAIN} [context]"
+        println "  ${_GREEN}install_app${_PLAIN} [context]"
+        println "  ${_GREEN}perfetto${_PLAIN} [context]"
+        println "  ${_GREEN}ps${_PLAIN}"
+        println "  ${_GREEN}list_containers${_PLAIN}"
+        println "  ${_GREEN}bootchart${_PLAIN} [context]"
+        println "  ${_GREEN}collect_logs${_PLAIN} [context]"
+        println "  ${_GREEN}help${_PLAIN}"
+        println "  ${_GREEN}unreal_vr_test${_PLAIN}"
+        println "  ${_GREEN}sysbake${_PLAIN}"
+        println "  ${_GREEN}extract${_PLAIN} [context]"
+        println "  ${_GREEN}start_early_debug${_PLAIN} [context]"
+        println "  ${_GREEN}gdb_server${_PLAIN} [context]"
+        println "  ${_GREEN}lldb_server${_PLAIN} [context]"
+        println "  ${_GREEN}gdb_attach${_PLAIN} [context]"
+        println "  ${_GREEN}kill_gdb_server${_PLAIN} [context]"
+        println "  ${_GREEN}kill_lldb_server${_PLAIN} [context]"
+        echo
+        println "Where [context] is the name of a Lepton instance (listed by 'lepton ps')"
+        println "Example workflow"
+        echo
+        println "First, in one terminal window, start a Lepton dev container:"
+        echo
+        println "    ${_GREEN}$0 start${_PLAIN}"
+        echo
+        println "If no context name is given, it defaults to 'dev'."
+        println "You can customize this by passing a second argument as a context name."
+        println "This even allows you to start multiple dev containers at once:"
+        echo
+        println "    ${_GREEN}$0 start dev2${_PLAIN}"
+        echo
+        println "Next, list the currently running containers, along with their container IP addresses, and the port forward for adb:"
+        println "You can use this port number (usually 5555) to connect via ${_GREEN}adb connect $(hostname):5555${_PLAIN}"
+        echo
+        println "    ${_GREEN}$0 ps${_PLAIN}"
+        echo
+        println "To get a shell on one of these containers, attach to it:"
+        echo
+        println "    ${_GREEN}$0 attach dev${_PLAIN}"
+        echo
+        println "To install an app onto one of these containers:"
+        echo
+        println "    ${_GREEN}$0 install_app dev /path/to/game.apk${_PLAIN}"
+        echo
+        println "Note that you can enable renderdoc support by adding '--renderdoc' to the end of the above."
+        println "To kill the containers, either kill them by name or use kill_all:"
+        echo
+        println "    ${_GREEN}$0 kill_all${_PLAIN}"
+        echo
+        println "To wipe out all baked state (typically unnecessary) use cleanup_all:"
+        echo
+        println "    ${_GREEN}$0 cleanup_all${_PLAIN}"
+        ;;
+    apk_info)
+        print_apk_info "${@:2}"
+        ;;
+    version)
+        println "compat tool: $(lepton_version), rootfs: $(lepton_rootfs_version)"
+        ;;
+    *)
+        die "Unknown command '${COMMAND}', try 'help'!"
+        ;;
+esac

@@ -1,0 +1,28 @@
+From 608a599e5313cdd80ea446bd93192f9a377b6483 Mon Sep 17 00:00:00 2001
+From: Franz-Josef Haider <frajo@frajo.fi>
+Date: Mon, 29 Dec 2025 14:48:27 +0200
+Subject: [PATCH 14/19] lepton: Set uid/gid as the expected ones since our
+ filesystem is owned by the host user.
+
+Change-Id: I4a84879ef8ef84e4b4b770cfd20174e192cc13c4
+---
+ cmds/installd/utils.cpp | 3 +++
+ 1 file changed, 3 insertions(+)
+
+diff --git a/cmds/installd/utils.cpp b/cmds/installd/utils.cpp
+index ffc082d5b2..3a5c05d86c 100644
+--- a/cmds/installd/utils.cpp
++++ b/cmds/installd/utils.cpp
+@@ -1232,6 +1232,9 @@ int prepare_app_cache_dir(const std::string& parent, const char* name, mode_t ta
+         }
+     }
+ 
++    st.st_uid = uid;
++    st.st_gid = gid;
++
+     mode_t actual_mode = st.st_mode & (S_IRWXU | S_IRWXG | S_IRWXO | S_ISGID);
+     if (st.st_uid != uid) {
+         // Mismatched UID is real trouble; we can't recover
+-- 
+2.55.0
+

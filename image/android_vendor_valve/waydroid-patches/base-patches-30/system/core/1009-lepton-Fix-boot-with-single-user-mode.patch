@@ -1,0 +1,106 @@
+From 9b5e40d32f7a1f45a4bc5d74f467ffc6ba58e5c3 Mon Sep 17 00:00:00 2001
+From: Franz-Josef Haider <frajo@frajo.fi>
+Date: Mon, 29 Dec 2025 12:32:48 +0200
+Subject: [PATCH 1/2] lepton: Fix boot with single user mode.
+
+Change-Id: Iffcf3f0dadd17232d3d8ecd5ab63cd823d7c0f25
+---
+ init/first_stage_init.cpp | 19 +++++++++++--------
+ rootdir/init.rc           | 15 ++++++++-------
+ 2 files changed, 19 insertions(+), 15 deletions(-)
+
+diff --git a/init/first_stage_init.cpp b/init/first_stage_init.cpp
+index fe08d5036..dd2a52f51 100644
+--- a/init/first_stage_init.cpp
++++ b/init/first_stage_init.cpp
+@@ -204,13 +204,16 @@ int FirstStageMain(int argc, char** argv) {
+         CHECKCALL(mkdir("/dev/socket", 0755));
+         CHECKCALL(mount("devpts", "/dev/pts", "devpts", 0, NULL));
+ #define MAKE_STR(x) __STRING(x)
+-        CHECKCALL(mount("proc", "/proc", "proc", 0, "hidepid=2,gid=" MAKE_STR(AID_READPROC)));
++        //CHECKCALL(mount("proc", "/proc", "proc", 0, "hidepid=2,gid=" MAKE_STR(AID_READPROC)));
++        // Lepton gid=AID_READ_PROC -> 0:
++        CHECKCALL(mount("proc", "/proc", "proc", 0, "hidepid=2,gid=0"));
+ #undef MAKE_STR
+     }
+     // Don't expose the raw commandline to unprivileged processes.
+-    CHECKCALL(chmod("/proc/cmdline", 0440));
++    //CHECKCALL(chmod("/proc/cmdline", 0440));
+     std::string cmdline;
+-    android::base::ReadFileToString("/proc/cmdline", &cmdline);
++    //android::base::ReadFileToString("/proc/cmdline", &cmdline);
++    cmdline = "";
+     gid_t groups[] = {AID_READPROC};
+     CHECKCALL(setgroups(arraysize(groups), groups));
+     // Disabled in Waydroid
+@@ -219,14 +222,14 @@ int FirstStageMain(int argc, char** argv) {
+         CHECKCALL(mount("selinuxfs", "/sys/fs/selinux", "selinuxfs", 0, NULL));
+     }
+ 
+-    CHECKCALL(mknod("/dev/kmsg", S_IFCHR | 0600, makedev(1, 11)));
++    //CHECKCALL(mknod("/dev/kmsg", S_IFCHR | 0600, makedev(1, 11)));
+ 
+     if constexpr (WORLD_WRITABLE_KMSG) {
+-        CHECKCALL(mknod("/dev/kmsg_debug", S_IFCHR | 0622, makedev(1, 11)));
++        //CHECKCALL(mknod("/dev/kmsg_debug", S_IFCHR | 0622, makedev(1, 11)));
+     }
+ 
+-    CHECKCALL(mknod("/dev/random", S_IFCHR | 0666, makedev(1, 8)));
+-    CHECKCALL(mknod("/dev/urandom", S_IFCHR | 0666, makedev(1, 9)));
++    //CHECKCALL(mknod("/dev/random", S_IFCHR | 0666, makedev(1, 8)));
++    //CHECKCALL(mknod("/dev/urandom", S_IFCHR | 0666, makedev(1, 9)));
+ 
+     // This is needed for log wrapper, which gets called before ueventd runs.
+     // Can be created by LXC on Waydroid
+@@ -244,7 +247,7 @@ int FirstStageMain(int argc, char** argv) {
+     // Mount staging areas for devices managed by vold
+     // See storage config details at http://source.android.com/devices/storage/
+     CHECKCALL(mount("tmpfs", "/mnt", "tmpfs", MS_NOEXEC | MS_NOSUID | MS_NODEV,
+-                    "mode=0755,uid=0,gid=1000"));
++                    "mode=0755,uid=0,gid=0")); // Lepton gid=1000 -> 0
+     // /mnt/vendor is used to mount vendor-specific partitions that can not be
+     // part of the vendor partition, e.g. because they are mounted read-write.
+     CHECKCALL(mkdir("/mnt/vendor", 0755));
+diff --git a/rootdir/init.rc b/rootdir/init.rc
+index 4d3c12533..02c75a0a4 100644
+--- a/rootdir/init.rc
++++ b/rootdir/init.rc
+@@ -64,7 +64,7 @@ on early-init
+     # Mount bootstrap linker configuration as current
+     mount none /linkerconfig/bootstrap /linkerconfig bind rec
+ 
+-    start ueventd
++    # start ueventd
+ 
+     # Run apexd-bootstrap so that APEXes that provide critical libraries
+     # become available. Note that this is executed as exec_start to ensure that
+@@ -715,7 +715,8 @@ on post-fs-data
+ 
+     # A tmpfs directory, which will contain all apps CE DE data directory that
+     # bind mount from the original source.
+-    mount tmpfs tmpfs /data_mirror nodev noexec nosuid mode=0700,uid=0,gid=1000
++    # Lepton gid=1000 -> 0
++    mount tmpfs tmpfs /data_mirror nodev noexec nosuid mode=0700,uid=0,gid=0
+     restorecon /data_mirror
+     mkdir /data_mirror/data_ce 0700 root root
+     mkdir /data_mirror/data_de 0700 root root
+@@ -1034,11 +1035,11 @@ on property:security.perf_harden=1
+ 
+ ## Daemon processes to be run by init.
+ ##
+-service ueventd /system/bin/ueventd
+-    class core
+-    critical
+-    seclabel u:r:ueventd:s0
+-    shutdown critical
++# service ueventd /system/bin/ueventd
++#     class core
++#     critical
++#     seclabel u:r:ueventd:s0
++#     shutdown critical
+ 
+ service console /system/bin/sh
+     class core
+-- 
+2.52.0
+

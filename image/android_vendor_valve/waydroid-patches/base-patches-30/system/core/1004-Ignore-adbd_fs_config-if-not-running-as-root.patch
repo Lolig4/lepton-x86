@@ -1,0 +1,35 @@
+From 880d6ea54b982680a2cdcaa75bd7b152e713f60d Mon Sep 17 00:00:00 2001
+From: Elliot Saba <sabae@valvesoftware.com>
+Date: Thu, 16 Jan 2025 21:19:04 -0800
+Subject: [PATCH] Ignore `adbd_fs_config()` if not running as root
+
+This backports a fix from c1bd54a6ed585e420deeafd1d55fcf9854631000
+
+Change-Id: I953e21d88f24e699675a742a75dde2f30f20e6d6
+---
+ adb/libs/libadbd_fs/adbd_fs.cpp | 6 ++++++
+ 1 file changed, 6 insertions(+)
+
+diff --git a/adb/libs/libadbd_fs/adbd_fs.cpp b/adb/libs/libadbd_fs/adbd_fs.cpp
+index 8e62d40d1..40d3eff22 100644
+--- a/adb/libs/libadbd_fs/adbd_fs.cpp
++++ b/adb/libs/libadbd_fs/adbd_fs.cpp
+@@ -17,9 +17,15 @@
+ #include <adbd_fs.h>
+ 
+ #include <private/fs_config.h>
++#include <unistd.h>
+ 
+ void adbd_fs_config(const char* path, int dir, const char* target_out_path, uid_t* uid, gid_t* gid,
+                     mode_t* mode, uint64_t* capabilities) {
++  // Only root has the necessary permissions to be able to apply fs_config.
++  if (getuid() != 0) {
++    return;
++  }
++
+   unsigned uid_hack;
+   unsigned gid_hack;
+   unsigned mode_hack;
+-- 
+2.34.1
+

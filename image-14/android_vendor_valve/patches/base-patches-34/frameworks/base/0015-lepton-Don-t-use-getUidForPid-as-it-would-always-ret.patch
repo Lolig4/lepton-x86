@@ -1,0 +1,65 @@
+From d63fddfbf227a4f5120ba3277a48ea91baddc0e0 Mon Sep 17 00:00:00 2001
+From: Franz-Josef Haider <frajo@frajo.fi>
+Date: Mon, 29 Dec 2025 18:15:36 +0200
+Subject: [PATCH 15/22] lepton: Don't use getUidForPid as it would always
+ return 0, to avoid a deadlock.
+
+Change-Id: Iecc32c66a3cf599493af42296dfb386e085d9491
+---
+ core/java/android/os/Process.java                             | 4 ++++
+ .../java/com/android/server/am/ContentProviderHelper.java     | 3 ++-
+ .../com/android/server/stats/pull/StatsPullAtomService.java   | 2 +-
+ 3 files changed, 7 insertions(+), 2 deletions(-)
+
+diff --git a/core/java/android/os/Process.java b/core/java/android/os/Process.java
+index 7020a38ed08a..72fcc5719257 100644
+--- a/core/java/android/os/Process.java
++++ b/core/java/android/os/Process.java
+@@ -50,6 +50,8 @@ import java.io.IOException;
+ import java.util.Map;
+ import java.util.concurrent.TimeoutException;
+ 
++import android.util.Slog;
++
+ /**
+  * Tools for managing OS processes.
+  */
+@@ -1072,6 +1074,8 @@ public class Process {
+      */
+     @UnsupportedAppUsage
+     public static final int getUidForPid(int pid) {
++        Slog.wtf("Lepton", "getUidForPid should be avoided!");
++
+         String[] procStatusLabels = { "Uid:" };
+         long[] procStatusValues = new long[1];
+         procStatusValues[0] = -1;
+diff --git a/services/core/java/com/android/server/am/ContentProviderHelper.java b/services/core/java/com/android/server/am/ContentProviderHelper.java
+index cb7898d8b862..c085128504f9 100644
+--- a/services/core/java/com/android/server/am/ContentProviderHelper.java
++++ b/services/core/java/com/android/server/am/ContentProviderHelper.java
+@@ -1709,7 +1709,8 @@ public class ContentProviderHelper {
+                     "RETRIEVED STATE FOR " + procStatFile + ": " + (char) state);
+         }
+         if (state != 'Z' && state != 'X' && state != 'x' && state != 'K') {
+-            return Process.getUidForPid(pid) == proc.uid;
++            return true;
++            //return Process.getUidForPid(pid) == proc.uid;
+         }
+         return false;
+     }
+diff --git a/services/core/java/com/android/server/stats/pull/StatsPullAtomService.java b/services/core/java/com/android/server/stats/pull/StatsPullAtomService.java
+index 0ffd002197c4..eac39e0ed08e 100644
+--- a/services/core/java/com/android/server/stats/pull/StatsPullAtomService.java
++++ b/services/core/java/com/android/server/stats/pull/StatsPullAtomService.java
+@@ -2561,7 +2561,7 @@ public class StatsPullAtomService extends SystemService {
+     int pullProcessSystemIonHeapSizeLocked(int atomTag, List<StatsEvent> pulledData) {
+         List<IonAllocations> result = readProcessSystemIonHeapSizesFromDebugfs();
+         for (IonAllocations allocations : result) {
+-            pulledData.add(FrameworkStatsLog.buildStatsEvent(atomTag, getUidForPid(allocations.pid),
++            pulledData.add(FrameworkStatsLog.buildStatsEvent(atomTag, /* Lepton, getUidForPid(allocations.pid) */ 0,
+                     readCmdlineFromProcfs(allocations.pid),
+                     (int) (allocations.totalSizeInBytes / 1024), allocations.count,
+                     (int) (allocations.maxSizeInBytes / 1024)));
+-- 
+2.55.0
+

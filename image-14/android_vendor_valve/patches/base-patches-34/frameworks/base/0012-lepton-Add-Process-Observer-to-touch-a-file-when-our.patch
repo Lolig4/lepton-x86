@@ -1,0 +1,170 @@
+From 6c00735d901f01788fc0531152a9625222cd7e73 Mon Sep 17 00:00:00 2001
+From: Elliot Saba <sabae@valvesoftware.com>
+Date: Thu, 2 Jan 2025 14:23:29 -0800
+Subject: [PATCH 12/22] lepton: Add Process Observer to touch a file when our
+ process exits
+
+This allows lepton on the outside to wait for the creation of this
+file to then shut down the container when the process inside of the
+container exits.
+
+Additionally if the process doesn't start at all within a configurable time,
+we touch the same file to make lepton exit and avoid having empty containers
+hanging around.
+
+Change-Id: I7f552afded537308f690e656a5593c7306ea2bf8
+---
+ .../android/server/LeptonProcessObserver.java | 116 ++++++++++++++++++
+ .../java/com/android/server/SystemServer.java |   6 +
+ 2 files changed, 122 insertions(+)
+ create mode 100644 services/core/java/com/android/server/LeptonProcessObserver.java
+
+diff --git a/services/core/java/com/android/server/LeptonProcessObserver.java b/services/core/java/com/android/server/LeptonProcessObserver.java
+new file mode 100644
+index 000000000000..0f1dd3fafb25
+--- /dev/null
++++ b/services/core/java/com/android/server/LeptonProcessObserver.java
+@@ -0,0 +1,116 @@
++package com.android.server;
++
++import android.app.ActivityManager;
++import android.app.ActivityManagerInternal;
++import android.app.IProcessObserver;
++import android.content.Context;
++import android.os.RemoteException;
++import android.os.PowerManager;
++import android.os.SystemProperties;
++import android.util.Log;
++import com.android.server.SystemService;
++import com.android.server.LocalServices;
++import java.io.File;
++import java.io.IOException;
++
++import android.os.Handler;
++import android.os.Looper;
++
++public class LeptonProcessObserver {
++    private static final String TAG = "LeptonProcessObserver";
++    private static final String TARGET_PROPERTY = "lepton.app_id";
++    private static final String DEFAULT_APP_ID = "com.android.launcher3"; // Fallback if property missing
++    private static final String TIMEOUT_PROPERTY = "lepton.active_app_launch_timeout";
++
++    private final Context mContext;
++
++    public LeptonProcessObserver(Context context) {
++        Log.i(TAG, "LeptonProcessObserver STARTUP");
++        mContext = context;
++
++        try {
++            ActivityManagerInternal am = LocalServices.getService(ActivityManagerInternal.class);
++            if (am != null) {
++                am.registerProcessObserver(mProcessObserver);
++                Log.i(TAG, "LeptonProcessObserver registered successfully.");
++            } else {
++                Log.e(TAG, "Failed to get ActivityManager.");
++            }
++        } catch (Exception e) {
++            Log.e(TAG, "Error registering process observer: " + e.getMessage());
++        }
++
++        Integer timeout = SystemProperties.getInt(TIMEOUT_PROPERTY, 20);
++        Handler handler = new Handler(Looper.getMainLooper());
++        String targetProcessName = SystemProperties.get(TARGET_PROPERTY, DEFAULT_APP_ID);
++        Runnable timeoutRunnable = () -> {
++            if (targetPid == 0) {
++                Log.e(TAG, "Target app (" + targetProcessName + ") did not start.");
++                touchExitFile();
++            }
++        };
++        handler.postDelayed(timeoutRunnable, timeout * 1000);
++    }
++
++    private Boolean isTargetApp(int pid) {
++        // Fetch the target process name from system property
++        String targetProcessName = SystemProperties.get(TARGET_PROPERTY, DEFAULT_APP_ID);
++        ActivityManager am = (ActivityManager) mContext.getSystemService(Context.ACTIVITY_SERVICE);
++        if (am != null) {
++            for (ActivityManager.RunningAppProcessInfo processInfo : am.getRunningAppProcesses()) {
++                if (processInfo.pid == pid && targetProcessName.equals(processInfo.processName)) {
++                    Log.i(TAG, "Target process (" + targetProcessName + ") found: " + pid);
++                    return true;
++                }
++            }
++        } else {
++            Log.e(TAG, "Failed to get ActivityManager for process monitoring.");
++        }
++        return false;
++    }
++
++    // IProcessObserver implementation
++    private int targetPid = 0;
++    private final IProcessObserver.Stub mProcessObserver = new IProcessObserver.Stub() {
++        @Override
++        public void onForegroundActivitiesChanged(int pid, int uid, boolean fg) {
++            Log.i(TAG, "Foreground activity changed: " + pid + " " + fg);
++            if (isTargetApp(pid)) {
++                targetPid = pid;
++            }
++        }
++
++        @Override
++        public void onProcessStarted(int pid, int processUid, int packageUid,
++                              String packageName, String processName) {
++            Log.i(TAG, "Process started: " + pid + " " + processName);
++            String targetProcessName = SystemProperties.get(TARGET_PROPERTY, DEFAULT_APP_ID);
++            if (targetProcessName.equals(processName)) {
++                targetPid = pid;
++            }
++        }
++
++        @Override
++        public void onForegroundServicesChanged(int pid, int uid, int serviceTypes) {
++            Log.i(TAG, "Foreground service changed: " + pid + " " + serviceTypes);
++        }
++
++        @Override
++        public void onProcessDied(int pid, int uid) {
++            Log.i(TAG, "Process died: " + pid);
++            if (targetPid != 0 && pid == targetPid) {
++                touchExitFile();
++            }
++        }
++    };
++
++    private void touchExitFile() {
++        File file = new File("/data/lepton-on-app-exit");
++        try {
++            file.createNewFile();
++        } catch (IOException e) {
++            // Handle potential I/O exceptions
++            System.err.println("IOException occurred: " + e.getMessage());
++        }
++    }
++}
+diff --git a/services/java/com/android/server/SystemServer.java b/services/java/com/android/server/SystemServer.java
+index e19f08cb04a1..976b0208d133 100644
+--- a/services/java/com/android/server/SystemServer.java
++++ b/services/java/com/android/server/SystemServer.java
+@@ -234,6 +234,7 @@ import com.android.server.webkit.WebViewUpdateService;
+ import com.android.server.wm.ActivityTaskManagerService;
+ import com.android.server.wm.WindowManagerGlobalLock;
+ import com.android.server.wm.WindowManagerService;
++import com.android.server.LeptonProcessObserver;
+ 
+ import dalvik.system.VMRuntime;
+ 
+@@ -1752,6 +1753,11 @@ public final class SystemServer implements Dumpable {
+             mSystemServiceManager.startService(LogcatManagerService.class);
+             t.traceEnd();
+ 
++            // Lepton: This watches for our process to exit then shuts down the system
++            t.traceBegin("LeptonProcessObserver");
++            LeptonProcessObserver leptonObserver = new LeptonProcessObserver(context);
++            t.traceEnd();
++
+         } catch (Throwable e) {
+             Slog.e("System", "******************************************");
+             Slog.e("System", "************ Failure starting core service");
+-- 
+2.55.0
+

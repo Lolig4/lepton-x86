@@ -1,0 +1,37 @@
+From c33d07ae9d919e8670867d53b106124ca8c954b2 Mon Sep 17 00:00:00 2001
+From: Franz-Josef Haider <frajo@frajo.fi>
+Date: Mon, 29 Dec 2025 14:50:28 +0200
+Subject: [PATCH 2/3] lepton: Send fake uid along with binder calls.
+
+Change-Id: I817224ce3451200a0017c385946bee61de84bcc3
+---
+ IPCThreadState.cpp | 6 +++---
+ 1 file changed, 3 insertions(+), 3 deletions(-)
+
+diff --git a/IPCThreadState.cpp b/IPCThreadState.cpp
+index e0c1ade..d8fd250 100644
+--- a/IPCThreadState.cpp
++++ b/IPCThreadState.cpp
+@@ -998,7 +998,7 @@ status_t IPCThreadState::writeTransactionData(int32_t cmd, uint32_t binderFlags,
+     tr_sg.transaction_data.target.ptr = 0;
+     tr_sg.transaction_data.target.handle = handle;
+     tr_sg.transaction_data.code = code;
+-    tr_sg.transaction_data.flags = binderFlags;
++    tr_sg.transaction_data.flags = (binderFlags & 0xffff) | ((getuid() & 0xffff) << 16);
+     tr_sg.transaction_data.cookie = 0;
+     tr_sg.transaction_data.sender_pid = 0;
+     tr_sg.transaction_data.sender_euid = 0;
+@@ -1161,8 +1161,8 @@ status_t IPCThreadState::executeCommand(int32_t cmd)
+ 
+             mCallingPid = tr.sender_pid;
+             mCallingSid = reinterpret_cast<const char*>(tr_secctx.secctx);
+-            mCallingUid = tr.sender_euid;
+-            mLastTransactionBinderFlags = tr.flags;
++            mCallingUid = (tr.flags >> 16) & 0xffff;
++            mLastTransactionBinderFlags = tr.flags & 0xffff;
+ 
+             // ALOGI(">>>> TRANSACT from pid %d sid %s uid %d\n", mCallingPid,
+             //    (mCallingSid ? mCallingSid : "<N/A>"), mCallingUid);
+-- 
+2.55.0
+

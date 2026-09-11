@@ -1,0 +1,83 @@
+From ed809f3d9b81bececce3514729d785d620260478 Mon Sep 17 00:00:00 2001
+From: Elliot Saba <sabae@valvesoftware.com>
+Date: Fri, 17 Jan 2025 12:41:50 -0800
+Subject: [PATCH 1021/1021] Revert "clipboard: Talk with waydroid host service
+ to get clipboard synchronized"
+
+This reverts commit b799ac932536d20318a0a1acfcee392a7f742147.
+---
+ .../server/clipboard/ClipboardService.java    | 23 -------------------
+ 1 file changed, 23 deletions(-)
+
+diff --git a/services/core/java/com/android/server/clipboard/ClipboardService.java b/services/core/java/com/android/server/clipboard/ClipboardService.java
+index f50d6c87a99..ed3a223b5dd 100644
+--- a/services/core/java/com/android/server/clipboard/ClipboardService.java
++++ b/services/core/java/com/android/server/clipboard/ClipboardService.java
+@@ -68,8 +68,6 @@ import java.io.RandomAccessFile;
+ import java.util.HashSet;
+ import java.util.List;
+ 
+-import lineageos.waydroid.Clipboard;
+-
+ // The following class is Android Emulator specific. It is used to read and
+ // write contents of the host system's clipboard.
+ class HostClipboardMonitor implements Runnable {
+@@ -174,7 +172,6 @@ public class ClipboardService extends SystemService {
+     private final IBinder mPermissionOwner;
+     private HostClipboardMonitor mHostClipboardMonitor = null;
+     private Thread mHostMonitorThread = null;
+-    private Clipboard mWaydroidClipboard = null;
+ 
+     private final SparseArray<PerUserClipboard> mClipboards = new SparseArray<>();
+ 
+@@ -213,9 +210,6 @@ public class ClipboardService extends SystemService {
+             mHostMonitorThread = new Thread(mHostClipboardMonitor);
+             mHostMonitorThread.start();
+         }
+-
+-        if (Clipboard.getService() != null)
+-            mWaydroidClipboard = Clipboard.getInstance(context);
+     }
+ 
+     @Override
+@@ -368,11 +362,6 @@ public class ClipboardService extends SystemService {
+                 }
+                 checkDataOwnerLocked(clip, intendingUid);
+                 setPrimaryClipInternal(clip, intendingUid);
+-                if (mWaydroidClipboard != null) {
+-                    ClipData.Item firstItem = clip.getItemAt(0);
+-                    String text = firstItem.getText().toString();
+-                    mWaydroidClipboard.sendClipboardData(text);
+-                }
+             }
+         }
+ 
+@@ -400,14 +389,6 @@ public class ClipboardService extends SystemService {
+                     return null;
+                 }
+                 addActiveOwnerLocked(intendingUid, pkg);
+-                if (mWaydroidClipboard != null) {
+-                    String waydroidPaste = mWaydroidClipboard.getClipboardData();
+-                    ClipData clip =
+-                        new ClipData("host clipboard",
+-                                     new String[]{"text/plain"},
+-                                     new ClipData.Item(waydroidPaste));
+-                    return clip;
+-                }
+                 return getClipboard(intendingUserId).primaryClip;
+             }
+         }
+@@ -439,10 +420,6 @@ public class ClipboardService extends SystemService {
+                         || isDeviceLocked(intendingUserId)) {
+                     return false;
+                 }
+-                if (mWaydroidClipboard != null) {
+-                    String waydroidPaste = mWaydroidClipboard.getClipboardData();
+-                    return !waydroidPaste.isEmpty();
+-                }
+                 return getClipboard(intendingUserId).primaryClip != null;
+             }
+         }
+-- 
+2.34.1
+

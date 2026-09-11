@@ -1,0 +1,69 @@
+From abb80877c20982dbb090e6e72bb9a87ce49d18ba Mon Sep 17 00:00:00 2001
+From: Franz-Josef Haider <frajo@frajo.fi>
+Date: Thu, 6 Aug 2026 19:50:09 +0300
+Subject: [PATCH 2/2] lepton: Make it possible to have /storage/emulated/0 be a
+ symlink.
+
+Change-Id: I324617da3c7732adc96ac5530f56e343e24d1957
+---
+ FsCrypt.cpp              | 8 ++++----
+ Utils.cpp                | 3 ++-
+ model/EmulatedVolume.cpp | 2 ++
+ 3 files changed, 8 insertions(+), 5 deletions(-)
+
+diff --git a/FsCrypt.cpp b/FsCrypt.cpp
+index 541997b0..2bc20446 100644
+--- a/FsCrypt.cpp
++++ b/FsCrypt.cpp
+@@ -987,10 +987,10 @@ bool fscrypt_prepare_user_storage(const std::string& volume_uuid, userid_t user_
+         // up automatically; therefore, use a default ACL, to ensure apps with MEDIA_RW
+         // can keep reading external storage; in particular, this allows app cloning
+         // scenarios to work correctly on such devices.
+-        int ret = SetDefaultAcl(media_ce_path, 02770, AID_MEDIA_RW, AID_MEDIA_RW, {AID_MEDIA_RW});
+-        if (ret != android::OK) {
+-            return false;
+-        }
++        //int ret = SetDefaultAcl(media_ce_path, 02770, AID_MEDIA_RW, AID_MEDIA_RW, {AID_MEDIA_RW});
++        //if (ret != android::OK) {
++        //    return false;
++        //}
+         if (!prepare_dir_with_policy(misc_ce_path, 01771, AID_SYSTEM, AID_MISC, ce_policy))
+             return false;
+         if (!prepare_dir_with_policy(user_ce_path, 0771, AID_SYSTEM, AID_SYSTEM, ce_policy))
+diff --git a/Utils.cpp b/Utils.cpp
+index 051b9dae..d7dbfb49 100644
+--- a/Utils.cpp
++++ b/Utils.cpp
+@@ -557,7 +557,8 @@ status_t KillProcessesUsingPath(const std::string& path) {
+ 
+ status_t BindMount(const std::string& source, const std::string& target) {
+     if (UnmountTree(target) < 0) {
+-        return -errno;
++        // Lepton: this may fail due to host bind mounts
++        //return -errno;
+     }
+     if (TEMP_FAILURE_RETRY(mount(source.c_str(), target.c_str(), nullptr, MS_BIND | MS_REC, nullptr)) < 0) {
+         PLOG(ERROR) << "Failed to bind mount " << source << " to " << target;
+diff --git a/model/EmulatedVolume.cpp b/model/EmulatedVolume.cpp
+index 270dcd48..8eba371f 100644
+--- a/model/EmulatedVolume.cpp
++++ b/model/EmulatedVolume.cpp
+@@ -140,6 +140,7 @@ status_t EmulatedVolume::mountFuseBindMounts() {
+     }
+ 
+     status_t status = OK;
++#if 0
+     // Zygote will unmount these dirs if app data isolation is enabled, so apps
+     // cannot access these dirs directly.
+     std::string androidDataSource = StringPrintf("%s/data", androidSource.c_str());
+@@ -157,6 +158,7 @@ status_t EmulatedVolume::mountFuseBindMounts() {
+     if (status != OK) {
+         return status;
+     }
++#endif
+ 
+     // Installers get the same view as all other apps, with the sole exception that the
+     // OBB dirs (Android/obb) are writable to them. On sdcardfs devices, this requires
+-- 
+2.55.0
+

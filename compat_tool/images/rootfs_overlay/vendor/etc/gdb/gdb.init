@@ -1,0 +1,4 @@
+
+# Ignore `SIGPWR` and `SIGXCPU` which Unity seems to spam on its GC thread....
+handle SIGPWR nostop noprint pass
+handle SIGXCPU nostop noprint pass

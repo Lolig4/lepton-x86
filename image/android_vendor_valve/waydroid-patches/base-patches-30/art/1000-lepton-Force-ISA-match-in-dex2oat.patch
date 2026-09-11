@@ -1,0 +1,33 @@
+From 9e2d257a35baabfd5a0498dd1925850866b20de7 Mon Sep 17 00:00:00 2001
+From: Elliot Saba <sabae@valvesoftware.com>
+Date: Thu, 12 Dec 2024 17:11:14 -0800
+Subject: [PATCH] lepton: Force ISA match in `dex2oat`
+
+This avoids messages where we are not matching the ISA properly when
+generating `.dex` files.  It is to be determined whether this is
+actually useful or not.
+
+Change-Id: Ia179fedddc9224f0a412161580855b5453dd6b1d
+---
+ runtime/arch/arm64/instruction_set_features_arm64.cc | 4 ++--
+ 1 file changed, 2 insertions(+), 2 deletions(-)
+
+diff --git a/runtime/arch/arm64/instruction_set_features_arm64.cc b/runtime/arch/arm64/instruction_set_features_arm64.cc
+index 17369e82a6..b25199fc0f 100644
+--- a/runtime/arch/arm64/instruction_set_features_arm64.cc
++++ b/runtime/arch/arm64/instruction_set_features_arm64.cc
+@@ -170,9 +170,9 @@ Arm64FeaturesUniquePtr Arm64InstructionSetFeatures::FromCppDefines() {
+   // For more details about ARM feature macros, refer to
+   // Arm C Language Extensions Documentation (ACLE).
+   // https://developer.arm.com/docs/101028/latest
+-  bool needs_a53_835769_fix = false;
++  bool needs_a53_835769_fix = true; // lepton
+   bool needs_a53_843419_fix = needs_a53_835769_fix;
+-  bool has_crc = false;
++  bool has_crc = true;  // lepton
+   bool has_lse = false;
+   bool has_fp16 = false;
+   bool has_dotprod = false;
+-- 
+2.34.1
+

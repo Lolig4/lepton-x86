@@ -1,0 +1,28 @@
+From 9646245433e313ef84256d0223749002ecb9fc2b Mon Sep 17 00:00:00 2001
+From: Franz-Josef Haider <frajo@frajo.fi>
+Date: Thu, 26 Feb 2026 21:52:07 +0200
+Subject: [PATCH 1/1] Revert "[BACKPORT] Verify UID of incoming Zygote
+ connections."
+
+This reverts commit 17a67f51161d760283756010386b763aaa56d37e.
+---
+ core/java/com/android/internal/os/ZygoteConnection.java | 3 ---
+ 1 file changed, 3 deletions(-)
+
+diff --git a/core/java/com/android/internal/os/ZygoteConnection.java b/core/java/com/android/internal/os/ZygoteConnection.java
+index b2c0a6b9827..e6a3029c5b2 100644
+--- a/core/java/com/android/internal/os/ZygoteConnection.java
++++ b/core/java/com/android/internal/os/ZygoteConnection.java
+@@ -98,9 +98,6 @@ class ZygoteConnection {
+             throw ex;
+         }
+ 
+-        if (peer.getUid() != Process.SYSTEM_UID) {
+-            throw new ZygoteSecurityException("Only system UID is allowed to connect to Zygote.");
+-        }
+         isEof = false;
+     }
+ 
+-- 
+2.53.0
+

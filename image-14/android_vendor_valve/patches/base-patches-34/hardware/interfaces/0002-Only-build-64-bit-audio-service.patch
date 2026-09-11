@@ -1,0 +1,36 @@
+From 8a17b69435396d83d3fda24ab5bd5969aa432d6c Mon Sep 17 00:00:00 2001
+From: Joshua Ashton <joshua@froggi.es>
+Date: Wed, 21 Feb 2024 03:56:24 +0000
+Subject: [PATCH 2/3] Only build 64-bit audio service
+
+Does not work otherwise under 64-bit only ARM target.
+
+Change-Id: I046d2857404b2ed0e2777fbbcebf3b911b8e94f6
+---
+ audio/common/all-versions/default/service/Android.bp | 6 +++---
+ 1 file changed, 3 insertions(+), 3 deletions(-)
+
+diff --git a/audio/common/all-versions/default/service/Android.bp b/audio/common/all-versions/default/service/Android.bp
+index e2e0a93798..47f92aa1a0 100644
+--- a/audio/common/all-versions/default/service/Android.bp
++++ b/audio/common/all-versions/default/service/Android.bp
+@@ -23,13 +23,13 @@ android_hardware_audio_config_default {
+ 
+     soong_config_variables: {
+         run_64bit: {
+-            conditions_default: {
++            //conditions_default: {
+                 // Prefer 32 bit as the binary must always be installed at the same
+                 // location for init to start it and the build system does not support
+                 // having two binaries installable to the same location even if they are
+                 // not installed in the same build.
+-                compile_multilib: "prefer32",
+-            },
++            //    compile_multilib: "prefer32",
++            //},
+             compile_multilib: "64",
+         },
+     },
+-- 
+2.55.0
+

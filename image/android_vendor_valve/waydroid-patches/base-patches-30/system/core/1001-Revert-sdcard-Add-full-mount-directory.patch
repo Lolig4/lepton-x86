@@ -1,0 +1,157 @@
+From 8a85a62c1e9124192acb2c2f58158e31e580d9cf Mon Sep 17 00:00:00 2001
+From: Elliot Saba <sabae@valvesoftware.com>
+Date: Fri, 17 Jan 2025 10:01:24 -0800
+Subject: [PATCH 1004/1005] Revert "sdcard: Add full mount directory"
+
+This reverts commit f3b79639be6caacc7e9b01182d095b59a360378b.
+---
+ sdcard/fuse.cpp   |  3 ---
+ sdcard/fuse.h     |  1 -
+ sdcard/sdcard.cpp | 26 +++++---------------------
+ 3 files changed, 5 insertions(+), 25 deletions(-)
+
+diff --git a/sdcard/fuse.cpp b/sdcard/fuse.cpp
+index 05c6bfe53..95559d7ff 100644
+--- a/sdcard/fuse.cpp
++++ b/sdcard/fuse.cpp
+@@ -843,9 +843,6 @@ static int handle_unlink(struct fuse* fuse, struct fuse_handler* handler,
+         if (fuse != fuse->global->fuse_write) {
+             fuse_notify_delete(fuse->global->fuse_write, parent_node->nid, child_node->nid, name);
+         }
+-        if (fuse != fuse->global->fuse_full) {
+-            fuse_notify_delete(fuse->global->fuse_full, parent_node->nid, child_node->nid, name);
+-        }
+     }
+     return 0;
+ }
+diff --git a/sdcard/fuse.h b/sdcard/fuse.h
+index b4c2bb1d2..9ccd21dc4 100644
+--- a/sdcard/fuse.h
++++ b/sdcard/fuse.h
+@@ -176,7 +176,6 @@ struct fuse_global {
+     struct fuse* fuse_default;
+     struct fuse* fuse_read;
+     struct fuse* fuse_write;
+-    struct fuse* fuse_full;
+ };
+ 
+ /* Single FUSE mount */
+diff --git a/sdcard/sdcard.cpp b/sdcard/sdcard.cpp
+index 65bb26d96..41fd8ec2f 100644
+--- a/sdcard/sdcard.cpp
++++ b/sdcard/sdcard.cpp
+@@ -218,25 +218,20 @@ static void run(const char* source_path, const char* label, uid_t uid,
+     struct fuse fuse_default;
+     struct fuse fuse_read;
+     struct fuse fuse_write;
+-    struct fuse fuse_full;
+     struct fuse_handler handler_default;
+     struct fuse_handler handler_read;
+     struct fuse_handler handler_write;
+-    struct fuse_handler handler_full;
+     pthread_t thread_default;
+     pthread_t thread_read;
+     pthread_t thread_write;
+-    pthread_t thread_full;
+ 
+     memset(&global, 0, sizeof(global));
+     memset(&fuse_default, 0, sizeof(fuse_default));
+     memset(&fuse_read, 0, sizeof(fuse_read));
+     memset(&fuse_write, 0, sizeof(fuse_write));
+-    memset(&fuse_full, 0, sizeof(fuse_full));
+     memset(&handler_default, 0, sizeof(handler_default));
+     memset(&handler_read, 0, sizeof(handler_read));
+     memset(&handler_write, 0, sizeof(handler_write));
+-    memset(&handler_full, 0, sizeof(handler_full));
+ 
+     pthread_mutex_init(&global.lock, NULL);
+     global.package_to_appid = new AppIdMap;
+@@ -268,27 +263,22 @@ static void run(const char* source_path, const char* label, uid_t uid,
+     fuse_default.global = &global;
+     fuse_read.global = &global;
+     fuse_write.global = &global;
+-    fuse_full.global = &global;
+ 
+     global.fuse_default = &fuse_default;
+     global.fuse_read = &fuse_read;
+     global.fuse_write = &fuse_write;
+-    global.fuse_full = &fuse_full;
+ 
+     snprintf(fuse_default.dest_path, PATH_MAX, "/mnt/runtime/default/%s", label);
+     snprintf(fuse_read.dest_path, PATH_MAX, "/mnt/runtime/read/%s", label);
+     snprintf(fuse_write.dest_path, PATH_MAX, "/mnt/runtime/write/%s", label);
+-    snprintf(fuse_full.dest_path, PATH_MAX, "/mnt/runtime/full/%s", label);
+ 
+     handler_default.fuse = &fuse_default;
+     handler_read.fuse = &fuse_read;
+     handler_write.fuse = &fuse_write;
+-    handler_full.fuse = &fuse_full;
+ 
+     handler_default.token = 0;
+     handler_read.token = 1;
+     handler_write.token = 2;
+-    handler_full.token = 3;
+ 
+     umask(0);
+ 
+@@ -297,8 +287,7 @@ static void run(const char* source_path, const char* label, uid_t uid,
+          * permissions are completely masked off. */
+         if (fuse_setup(&fuse_default, AID_SDCARD_RW, 0006)
+                 || fuse_setup(&fuse_read, AID_EVERYBODY, 0027)
+-                || fuse_setup(&fuse_write, AID_EVERYBODY, full_write ? 0007 : 0027)
+-                || fuse_setup(&fuse_full, AID_EVERYBODY, 0007)) {
++                || fuse_setup(&fuse_write, AID_EVERYBODY, full_write ? 0007 : 0027)) {
+             PLOG(FATAL) << "failed to fuse_setup";
+         }
+     } else {
+@@ -307,8 +296,7 @@ static void run(const char* source_path, const char* label, uid_t uid,
+          * deep inside attr_from_stat(). */
+         if (fuse_setup(&fuse_default, AID_SDCARD_RW, 0006)
+                 || fuse_setup(&fuse_read, AID_EVERYBODY, full_write ? 0027 : 0022)
+-                || fuse_setup(&fuse_write, AID_EVERYBODY, full_write ? 0007 : 0022)
+-                || fuse_setup(&fuse_full, AID_EVERYBODY, 0007)) {
++                || fuse_setup(&fuse_write, AID_EVERYBODY, full_write ? 0007 : 0022)) {
+             PLOG(FATAL) << "failed to fuse_setup";
+         }
+     }
+@@ -322,8 +310,7 @@ static void run(const char* source_path, const char* label, uid_t uid,
+ 
+     if (pthread_create(&thread_default, NULL, start_handler, &handler_default)
+             || pthread_create(&thread_read, NULL, start_handler, &handler_read)
+-            || pthread_create(&thread_write, NULL, start_handler, &handler_write)
+-            || pthread_create(&thread_full, NULL, start_handler, &handler_full)) {
++            || pthread_create(&thread_write, NULL, start_handler, &handler_write)) {
+         LOG(FATAL) << "failed to pthread_create";
+     }
+ 
+@@ -386,7 +373,6 @@ static void run_sdcardfs(const std::string& source_path, const std::string& labe
+     std::string dest_path_default = "/mnt/runtime/default/" + label;
+     std::string dest_path_read = "/mnt/runtime/read/" + label;
+     std::string dest_path_write = "/mnt/runtime/write/" + label;
+-    std::string dest_path_full = "/mnt/runtime/full/" + label;
+ 
+     umask(0);
+     if (multi_user) {
+@@ -396,8 +382,7 @@ static void run_sdcardfs(const std::string& source_path, const std::string& labe
+                             AID_SDCARD_RW, 0006, derive_gid) ||
+             !sdcardfs_setup_bind_remount(dest_path_default, dest_path_read, AID_EVERYBODY, 0027) ||
+             !sdcardfs_setup_bind_remount(dest_path_default, dest_path_write, AID_EVERYBODY,
+-                                         full_write ? 0007 : 0027) ||
+-            !sdcardfs_setup_bind_remount(dest_path_default, dest_path_full, AID_EVERYBODY, 0007)) {
++                                         full_write ? 0007 : 0027)) {
+             LOG(FATAL) << "failed to sdcardfs_setup";
+         }
+     } else {
+@@ -409,8 +394,7 @@ static void run_sdcardfs(const std::string& source_path, const std::string& labe
+             !sdcardfs_setup_bind_remount(dest_path_default, dest_path_read, AID_EVERYBODY,
+                                          full_write ? 0027 : 0022) ||
+             !sdcardfs_setup_bind_remount(dest_path_default, dest_path_write, AID_EVERYBODY,
+-                                         full_write ? 0007 : 0022) ||
+-            !sdcardfs_setup_bind_remount(dest_path_default, dest_path_full, AID_EVERYBODY, 0007)) {
++                                         full_write ? 0007 : 0022)) {
+             LOG(FATAL) << "failed to sdcardfs_setup";
+         }
+     }
+-- 
+2.34.1
+

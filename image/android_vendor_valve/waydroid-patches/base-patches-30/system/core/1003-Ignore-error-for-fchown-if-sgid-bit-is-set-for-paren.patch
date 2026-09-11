@@ -1,0 +1,62 @@
+From a9e9a244e89a9bf1d9dadb4f8638b5aa6e93008d Mon Sep 17 00:00:00 2001
+From: Elliot Saba <sabae@valvesoftware.com>
+Date: Thu, 16 Jan 2025 15:45:13 -0800
+Subject: [PATCH] Ignore error for fchown if sgid bit is set for parent
+ directory
+
+When a file is transferred to device, fchown will be called to set
+gid/uid. If sgid permission is set, then gid will be set automatically,
+in this case ignore return code from fchown.
+
+Bug: 192445890
+Test: Manual, confirm permissions:
+adb shell ls -la /storage/emulated/0/Android/data/com.android.vending/
+drwxrws---  3 u0_a207  ext_data_rw 3452 2021-06-29 14:49 .
+push file to filesystem
+adb push foo /storage/emulated/0/Android/data/com.android.vending/files
+
+Change-Id: I9719bf7d2bb6dc473c826114067288ceecb52755
+(cherry picked from commit e79769d3b6e535b6774528438d8c5514320b0279)
+
+Backported from commit 41721e44b4828de9643f291303e7bdd35947564e in
+upstream: https://android.googlesource.com/platform/packages/modules/adb
+
+Change-Id: I19326a348bb8020ee4703213231e7ea5ff03899d
+---
+ adb/daemon/file_sync_service.cpp | 13 +++++++++++--
+ 1 file changed, 11 insertions(+), 2 deletions(-)
+
+diff --git a/adb/daemon/file_sync_service.cpp b/adb/daemon/file_sync_service.cpp
+index 07f6e65e8..c0c9d3319 100644
+--- a/adb/daemon/file_sync_service.cpp
++++ b/adb/daemon/file_sync_service.cpp
+@@ -64,6 +64,7 @@
+ 
+ using android::base::borrowed_fd;
+ using android::base::Dirname;
++using android::base::Realpath;
+ using android::base::StringPrintf;
+ 
+ static bool should_use_fs_config(const std::string& path) {
+@@ -367,8 +368,16 @@ static bool handle_send_file(borrowed_fd s, const char* path, uint32_t* timestam
+         goto fail;
+     } else {
+         if (fchown(fd.get(), uid, gid) == -1) {
+-            SendSyncFailErrno(s, "fchown failed");
+-            goto fail;
++            struct stat st;
++            std::string real_path;
++
++            // Only return failure if parent directory does not have S_ISGID bit set,
++            // if S_ISGID is set then file will inherit groupid from directory
++            if (!Realpath(path, &real_path) || lstat(Dirname(real_path).c_str(), &st) == -1 ||
++                (S_ISDIR(st.st_mode) && (st.st_mode & S_ISGID) == 0)) {
++                SendSyncFailErrno(s, "fchown failed");
++                goto fail;
++            }
+         }
+ 
+ #if defined(__ANDROID__)
+-- 
+2.34.1
+

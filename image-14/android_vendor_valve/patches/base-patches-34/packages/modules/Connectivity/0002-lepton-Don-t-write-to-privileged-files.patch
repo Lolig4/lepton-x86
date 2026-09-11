@@ -1,0 +1,33 @@
+From a9c576df1f5330c323e17500c43cca6cdb63c34a Mon Sep 17 00:00:00 2001
+From: Franz-Josef Haider <frajo@frajo.fi>
+Date: Tue, 30 Jun 2026 22:17:45 +0300
+Subject: [PATCH 2/4] lepton: Don't write to privileged files.
+
+Change-Id: I7e8e3d6581aa641223cf08f0d402296de184c36f
+---
+ netbpfload/NetBpfLoad.cpp | 2 ++
+ 1 file changed, 2 insertions(+)
+
+diff --git a/netbpfload/NetBpfLoad.cpp b/netbpfload/NetBpfLoad.cpp
+index ed7d048279..4c9095f5d4 100644
+--- a/netbpfload/NetBpfLoad.cpp
++++ b/netbpfload/NetBpfLoad.cpp
+@@ -339,6 +339,7 @@ int main(int argc, char** argv, char * const envp[]) {
+         return 1;
+     }
+ 
++#if 0
+     if (isAtLeastU) {
+         // Linux 5.16-rc1 changed the default to 2 (disabled but changeable),
+         // but we need 0 (enabled)
+@@ -360,6 +361,7 @@ int main(int argc, char** argv, char * const envp[]) {
+         //  kernel does not have CONFIG_HAVE_EBPF_JIT=y)
+         if (writeProcSysFile("/proc/sys/net/core/bpf_jit_kallsyms", "1\n")) return 1;
+     }
++#endif
+ 
+     // Create all the pin subdirectories
+     // (this must be done first to allow selinux_context and pin_subdir functionality,
+-- 
+2.55.0
+

@@ -1,0 +1,150 @@
+From f0b55edd040464325416aad401edfbefe8d9ca8b Mon Sep 17 00:00:00 2001
+From: Franz-Josef Haider <frajo@frajo.fi>
+Date: Mon, 6 Jul 2026 12:04:29 +0300
+Subject: [PATCH 21/21] lepton: enhance backtraces using debuginfod.
+
+Change-Id: If0d4732f7a2a7bc10959b2ed2ed71a481ad66bd1
+---
+ debuggerd/Android.bp                |  2 +-
+ debuggerd/crash_dump.cpp            |  2 +-
+ debuggerd/libdebuggerd/utility.cpp  | 73 ++++++++++++++++++-----------
+ debuggerd/tombstoned/tombstoned.cpp |  2 +-
+ 4 files changed, 49 insertions(+), 30 deletions(-)
+
+diff --git a/debuggerd/Android.bp b/debuggerd/Android.bp
+index 439218d4d2..d511c67b71 100644
+--- a/debuggerd/Android.bp
++++ b/debuggerd/Android.bp
+@@ -458,7 +458,7 @@ cc_binary {
+         "libbase",
+         "liblog",
+         "libprocinfo",
+-        "libunwindstack",
++        "libunwindstack_debuginfod",
+     ],
+ 
+     apex_available: [
+diff --git a/debuggerd/crash_dump.cpp b/debuggerd/crash_dump.cpp
+index a23a26925d..daf53c2b82 100644
+--- a/debuggerd/crash_dump.cpp
++++ b/debuggerd/crash_dump.cpp
+@@ -467,7 +467,7 @@ int main(int argc, char** argv) {
+   //
+   // Note: processes with many threads and minidebug-info can take a bit to
+   //       unwind, do not make this too small. b/62828735
+-  alarm(30 * android::base::HwTimeoutMultiplier());
++  //alarm(30 * android::base::HwTimeoutMultiplier());
+ 
+   // Collect the list of open files.
+   OpenFilesList open_files;
+diff --git a/debuggerd/libdebuggerd/utility.cpp b/debuggerd/libdebuggerd/utility.cpp
+index 742ac7c270..1c1232512a 100644
+--- a/debuggerd/libdebuggerd/utility.cpp
++++ b/debuggerd/libdebuggerd/utility.cpp
+@@ -85,36 +85,50 @@ void _VLOG(log_t* log, enum logtype ltype, const char* fmt, va_list ap) {
+ 
+   if (msg.empty()) return;
+ 
+-  if (write_to_tombstone) {
+-    TEMP_FAILURE_RETRY(write(log->tfd, msg.c_str(), msg.size()));
+-  }
++  if (write_to_logcat || write_to_tombstone) {
++    std::string msg2 = msg;
+ 
+-  if (write_to_logcat) {
+-    __android_log_buf_write(LOG_ID_CRASH, ANDROID_LOG_FATAL, LOG_TAG, msg.c_str());
+-    if (log->amfd_data != nullptr) {
+-      *log->amfd_data += msg;
++    if (msg.back() == '\n') {
++      msg.back() = '\0';
+     }
+ 
+-    if (write_to_kmsg) {
+-      unique_fd kmsg_fd(open("/dev/kmsg_debug", O_WRONLY | O_APPEND | O_CLOEXEC));
+-      if (kmsg_fd.get() >= 0) {
+-        // Our output might contain newlines which would otherwise be handled by the android logger.
+-        // Split the lines up ourselves before sending to the kernel logger.
+-        if (msg.back() == '\n') {
+-          msg.back() = '\0';
+-        }
++    std::vector<std::string> fragments = android::base::Split(msg, "\n");
++    for (const std::string& fragment : fragments) {
++      if (write_to_tombstone) {
++        TEMP_FAILURE_RETRY(write(log->tfd, (fragment + "\n").c_str(), fragment.size() + 1));
++      }
++      if (write_to_logcat) {
++        __android_log_buf_write(LOG_ID_CRASH, ANDROID_LOG_FATAL, LOG_TAG, fragment.c_str());
++      }
++    }
++
++    if (write_to_logcat) {
++      msg = msg2;
++      if (log->amfd_data != nullptr) {
++        *log->amfd_data += msg;
++      }
+ 
+-        std::vector<std::string> fragments = android::base::Split(msg, "\n");
+-        for (const std::string& fragment : fragments) {
+-          static constexpr char prefix[] = "<3>DEBUG: ";
+-          struct iovec iov[3];
+-          iov[0].iov_base = const_cast<char*>(prefix);
+-          iov[0].iov_len = strlen(prefix);
+-          iov[1].iov_base = const_cast<char*>(fragment.c_str());
+-          iov[1].iov_len = fragment.length();
+-          iov[2].iov_base = const_cast<char*>("\n");
+-          iov[2].iov_len = 1;
+-          TEMP_FAILURE_RETRY(writev(kmsg_fd.get(), iov, 3));
++      if (write_to_kmsg) {
++        unique_fd kmsg_fd(open("/dev/kmsg_debug", O_WRONLY | O_APPEND | O_CLOEXEC));
++        if (kmsg_fd.get() >= 0) {
++          // Our output might contain newlines which would otherwise be handled by the android logger.
++          // Split the lines up ourselves before sending to the kernel logger.
++          if (msg.back() == '\n') {
++            msg.back() = '\0';
++          }
++
++          std::vector<std::string> fragments = android::base::Split(msg, "\n");
++          for (const std::string& fragment : fragments) {
++            static constexpr char prefix[] = "<3>DEBUG: ";
++            struct iovec iov[3];
++            iov[0].iov_base = const_cast<char*>(prefix);
++            iov[0].iov_len = strlen(prefix);
++            iov[1].iov_base = const_cast<char*>(fragment.c_str());
++            iov[1].iov_len = fragment.length();
++            iov[2].iov_base = const_cast<char*>("\n");
++            iov[2].iov_len = 1;
++            TEMP_FAILURE_RETRY(writev(kmsg_fd.get(), iov, 3));
++          }
+         }
+       }
+     }
+@@ -471,7 +485,12 @@ void log_backtrace(log_t* log, unwindstack::AndroidUnwinder* unwinder,
+     }
+   }
+ 
++  bool enhance = (log->tfd != -1)
++                 || (log->crashed_tid != -1
++                     && log->current_tid != -1
++                     && (log->crashed_tid == log->current_tid));
++
+   for (const auto& frame : data.frames) {
+-    _LOG(log, logtype::BACKTRACE, "%s%s\n", prefix, unwinder->FormatFrame(frame).c_str());
++    _LOG(log, logtype::BACKTRACE, "%s%s\n", prefix, unwinder->FormatFrame(frame, enhance).c_str());
+   }
+ }
+diff --git a/debuggerd/tombstoned/tombstoned.cpp b/debuggerd/tombstoned/tombstoned.cpp
+index e2a67a2f70..b02958a84c 100644
+--- a/debuggerd/tombstoned/tombstoned.cpp
++++ b/debuggerd/tombstoned/tombstoned.cpp
+@@ -314,7 +314,7 @@ static void perform_request(std::unique_ptr<Crash> crash) {
+   }
+ 
+   // TODO: Make this configurable by the interceptor?
+-  struct timeval timeout = {10 * android::base::HwTimeoutMultiplier(), 0};
++  struct timeval timeout = {600 * android::base::HwTimeoutMultiplier(), 0};
+ 
+   event_base* base = event_get_base(crash->crash_event);
+ 
+-- 
+2.55.0
+

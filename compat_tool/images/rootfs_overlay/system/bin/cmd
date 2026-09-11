@@ -1,0 +1,203 @@
+#!/system/bin/sh
+
+# We hook cmd, because it will make sure that, pm, adb, cmd, all go through
+# this wrapper. Note: adb only goes through this since we patch out adb_exec.
+
+function android_sdk_version()
+{
+    cat /system/build.prop |grep ro.build.version.sdk= | sed "s/.*=//g"
+}
+
+# These helper functions unmount all vulkan layers from an app's libdir, and mount them in again
+unmount_vulkan_layers()
+{
+    cmd_real package list packages -3 -U | while IFS= read -r package_line; do
+        package=$(echo "$package_line" | cut -d' ' -f1 | cut -d: -f2)
+        for vulkan_layer in /vendor/enabled_vulkan_layers/*.so; do
+            APP_PATH=$(pm path "$package")
+            APP_PATH="${APP_PATH#package:}"
+            APP_PATH="${APP_PATH%/base.apk}"
+
+            if [[ -n "${APP_PATH}" ]]; then
+                local APP_LIB_DIR="${APP_PATH}/lib/arm64"
+                for vulkan_layer in "${APP_LIB_DIR}"/libVkLayer_*.so; do
+                    PARENT_UID=0 PARENT_GID=0 umount $vulkan_layer 2>/dev/null >/dev/null || true
+                done
+            fi
+        done
+    done
+}
+
+mount_vulkan_layers()
+{
+    cmd_real package list packages -3 -U | while IFS= read -r package_line; do
+        package=$(echo "$package_line" | cut -d' ' -f1 | cut -d: -f2)
+        for vulkan_layer in /vendor/enabled_vulkan_layers/*.so; do
+            APP_PATH=$(pm path "$package")
+            APP_PATH="${APP_PATH#package:}"
+            APP_PATH="${APP_PATH%/base.apk}"
+
+            # Mount enabled vulkan layers
+            local LEPTON_LIB_DIR="/vendor/enabled_vulkan_layers"
+            local APP_LIB_DIR="${APP_PATH}/lib/arm64"
+            for LIBPATH in $(find "${LEPTON_LIB_DIR}/" -name *.so); do
+                local LAYER_BASENAME="$(basename "${LIBPATH}")"
+                mkdir -p "${APP_LIB_DIR}"
+                touch "${APP_LIB_DIR}/${LAYER_BASENAME}"
+                PARENT_UID=0 PARENT_GID=0 /system/bin/mount -o rbind "${LEPTON_LIB_DIR}/${LAYER_BASENAME}" "${APP_LIB_DIR}/${LAYER_BASENAME}"
+            done
+        done
+    done
+}
+
+if [ "$1" = "package" ] && { [ "$2" = "install" ] || [ "$2" = "install-commit" ] || [ "$2" = "install-existing" ]; }; then
+    # During package installation, umount all vulkan layers for all apps, we restore them later
+    unmount_vulkan_layers
+
+    # First, we wait for `service check package` to succeed:
+    # Wait up to 10s for the package service to be running
+    START_TIME=$(date +%s)
+    TIMEOUT=10
+    while ! cmd_real -w package list packages >/dev/null 2>&1; do
+        if [ $(date +%s) -gt $(( "${START_TIME}" + "${TIMEOUT}" )) ]; then
+            break
+        fi
+        sleep 0.1
+    done
+
+    # adb install foo.apk actually parses the output of this command, so we have to be careful
+    # to not let failing invocations show up in the output, otherwise it thinks it failed.
+    # Note that the `-w` here means wait until the service is ready.  We're really just trying everything here.
+    # Perform the actual operation.
+    cmd_real -w "$@"
+
+# Allow app launch to request we mount the vulkan layers
+elif [ "$1" = "lepton" ] && [ "$2" = "mount_vulkan_layers" ]; then
+    mount_vulkan_layers
+else
+    # Perform the actual operation.
+    cmd_real "$@"
+fi
+
+
+if [ "$?" = "0" ] && [ "$1" = "package" ] && { [ "$2" = "install" ] || [ "$2" = "install-commit" ] || [ "$2" = "install-existing" ]; }; then
+    local APP_ID="$(getprop lepton.active_app_id)"
+
+    # When installing via adb, the property might not have been set.
+    if [[ -z "${APP_ID}" ]]; then
+        # Find the last installed package (i.e. the one that was just installed)
+        APP_ID="$(\
+            for pkg in $(cmd_real package list packages -3 -U | sed 's/package://'); do
+                t=$(dumpsys package "$pkg" | grep firstInstallTime | cut -d= -f2)
+                echo "$t $pkg"
+            done | sort -r | \
+                head -n 1 | \
+                awk '{print $3}'
+        )"
+        setprop letpon.active_app_id "${APP_ID}"
+    fi
+
+    if [[ -z "${APP_ID}" ]]; then
+        >&2 echo "Lepton post installation failed due to APP_ID being unset."
+        exit 1
+    fi
+
+    # Certain android permissions are marked with a protection level of "dangerous" in
+    # `frameworks/base/core/res/AndroidManifest.xml`, which means that installation does
+    # _not_ automatically confer these permissions upon the app (unless they're a system
+    # or preinstalled app).  We could trick Android into thinking that the `.apk` we're
+    # installing was actually a preinstalled app, but that would require more `.xml`
+    # tomfoolery than I have patience for at this moment, so we instead resort to just
+    # granting permissions to every app that we install.  This is okay because there's
+    # no actual user data to protect within this container; it's a single-app container
+    # devoid of any user content except the user content that the application needs, so
+    # there's no need for a permissions model in the first place.
+    # External storage is a common one that apps need, especially when built for
+    # older Android versions than 30.
+    local UNGRANTED_PERMISSIONS="$(dumpsys package ${APP_ID} | grep granted=false | sed "s/:.*//g")"
+    local EXTRA_PERMISSIONS="android.permission.READ_EXTERNAL_STORAGE android.permission.WRITE_EXTERNAL_STORAGE android.permission.MANAGE_EXTERNAL_STORAGE ${UNGRANTED_PERMISSIONS}"
+    local PERMISSIONS_TO_GRANT="${UNGRANTED_PERMISSIONS}"
+    if [[ "$(android_sdk_version)" == "30" ]]; then
+        PERMISSIONS_TO_GRANT="${EXTRA_PERMISSIONS}"
+    fi
+    # It's already installed, but we need to perform some extra steps:
+    for PERMISSION in ${EXTRA_PERMISSIONS}; do
+        cmd_real package grant ${APP_ID} ${PERMISSION} 2>/dev/null || true
+    done
+
+    cmd_real package compile -m speed-profile ${APP_ID}  | grep -v Success;
+    if [[ "$(android_sdk_version)" == "30" ]]; then
+        cmd_real package compile --compile-layouts ${APP_ID} | grep -v Success;
+    fi
+    rm -rf /data/media/0/Android/obb/${APP_ID};
+    mkdir -p /data/media/0/Android/obb
+
+    APP_PATH="$(cmd_real package path ${APP_ID})"
+    APP_PATH="${APP_PATH#package:}"
+    APP_PATH="${APP_PATH%/base.apk}"
+
+    if [[ -z "${APP_PATH}" ]]; then
+        >&2 echo "Lepton post installation failed due to APP_PATH being unset."
+        exit 1
+    fi
+
+    local OBB_INNER_PATH="${APP_PATH}"
+
+    local HAD_OBB_DIR=false
+    if [[ -d "/data/steam_app/obb" ]]; then
+        OBB_INNER_PATH="${APP_PATH}/obb"
+        HAD_OBB_DIR=true
+        mkdir -p "${APP_PATH}"/obb
+    fi
+
+    # Move everything to our overlay.
+    mv "${APP_PATH}"/* /data/steam_app/
+
+    # Now that we know the pm path after installing the package, we can mount
+    # our dir where we expect it.
+    # unset PARENT_UID and PARENT_GID to avoid fstab parsing errors,
+    # due to being "shell" user.
+    PARENT_UID=0 PARENT_GID=0 /system/bin/mount -o rbind,rw "/data/steam_app" "${APP_PATH}"
+
+    if [[ "${HAD_OBB_DIR}" == "true" ]]; then
+        # When using lepton start *.apk, we mount obb -> /data/steam_app/obb, but the above
+        # recursive mount doesn't seem to pick it up, so we mount it here:
+        PARENT_UID=0 PARENT_GID=0 /system/bin/mount -o rbind,rw "/data/steam_app/obb" "${APP_PATH}/obb"
+    fi
+
+    ln -s ${OBB_INNER_PATH} /data/media/0/Android/obb/${APP_ID}
+
+    # Grep the runtime permissions path for a particular permission
+    function all_permissions_granted()
+    {
+        CUR_PERMS="$(dumpsys package ${APP_ID} | grep granted=true)"
+        # Extra permissions have already been granted
+        for PERMISSION in ${PERMISSIONS_TO_GRANT}; do
+            if ! printf '%s\n' "${CUR_PERMS}" | grep -Fq "${PERMISSION}"; then
+                # echo " -> Missing ${PERMISSION}"
+                return 1
+            fi
+        done
+        return 0
+    }
+
+    # If the permissions we want are not set  in our `runtime-permissions.xml` file,
+    # we loop here with `inotify`.  We wait a maximum of ten seconds, then stop waiting.
+    local START_TIME="$(date "+%s")"
+    while ! all_permissions_granted; do
+        >&2 echo "Waiting for permissions to be modified, then checking again..."
+
+        if (("$(date "+%s")" > "${START_TIME}" + 10)); then
+            >&2 echo "Ran out of patience, assuming everything is fine (permissions)!"
+            break
+        fi
+
+        sleep 1
+    done
+
+    cp /data/steam_app/steam_appid.txt "${APP_PATH}/steam_appid.txt" 2> /dev/null || true
+    cp /data/steam_app/UECommandLine.txt "${APP_PATH}/UECommandLine.txt" 2> /dev/null || true
+
+    # Restore/install the enabled_vulkan_layers
+    mount_vulkan_layers
+fi

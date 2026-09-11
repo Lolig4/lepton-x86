@@ -1,0 +1,185 @@
+From 94f64d04b2d63ce88a3161f36d4ca1d735f08259 Mon Sep 17 00:00:00 2001
+From: Mark Collins <mark@igalia.com>
+Date: Thu, 24 Apr 2025 14:33:03 +0000
+Subject: [PATCH 5/5] Expose only if gralloc prop is set
+
+QCOM gralloc interferes with MiniGBM gralloc if both are present in
+the system, and so to allow for them to co-exist. QCOM gralloc now
+checks the ro.hardware.gralloc property and only actives if it's
+set to 'qti-display'.
+
+Additionally, the HIDL files no longer expose the Android mapper or
+allocator services since these are expected to be exposed on
+MiniGBM's end.
+---
+ gralloc/Android.mk                                     |  3 +++
+ gralloc/QtiMapper.cpp                                  |  9 +++++++++
+ gralloc/QtiMapper4.cpp                                 |  9 +++++++++
+ ...droid.hardware.graphics.mapper-impl-qti-display.xml | 10 ----------
+ gralloc/service.cpp                                    |  6 ++++++
+ .../vendor.qti.hardware.display.allocator-service.xml  | 10 ----------
+ 6 files changed, 27 insertions(+), 20 deletions(-)
+
+diff --git a/gralloc/Android.mk b/gralloc/Android.mk
+index 57fee80fe2..439ea3124d 100644
+--- a/gralloc/Android.mk
++++ b/gralloc/Android.mk
+@@ -94,6 +94,7 @@ LOCAL_MODULE_TAGS             := optional
+ LOCAL_C_INCLUDES              := $(common_includes) $(kernel_includes)
+ LOCAL_HEADER_LIBRARIES        := display_headers
+ LOCAL_SHARED_LIBRARIES        := $(common_libs) \
++                                  libbase \
+                                   libhidlbase \
+                                   libqdMetaData \
+                                   libgrallocutils \
+@@ -122,6 +123,7 @@ LOCAL_MODULE_TAGS             := optional
+ LOCAL_C_INCLUDES              := $(common_includes) $(kernel_includes)
+ LOCAL_HEADER_LIBRARIES        := display_headers
+ LOCAL_SHARED_LIBRARIES        := $(common_libs) \
++                                  libbase \
+                                   libhidlbase \
+                                   libhidltransport \
+                                   libqdMetaData \
+@@ -152,6 +154,7 @@ LOCAL_MODULE_RELATIVE_PATH    := hw
+ LOCAL_MODULE_TAGS             := optional
+ LOCAL_HEADER_LIBRARIES        := display_headers
+ LOCAL_SHARED_LIBRARIES        := $(common_libs) \
++                                 libbase \
+                                  libhidlbase \
+                                  libqdMetaData \
+                                  libgrallocutils \
+diff --git a/gralloc/QtiMapper.cpp b/gralloc/QtiMapper.cpp
+index d8dd675004..ef87aac32f 100644
+--- a/gralloc/QtiMapper.cpp
++++ b/gralloc/QtiMapper.cpp
+@@ -31,6 +31,7 @@
+ #define DEBUG 0
+ #include "QtiMapper.h"
+ #include <cutils/trace.h>
++#include <android-base/properties.h>
+ #include <qdMetaData.h>
+ #include <sync/sync.h>
+ #include "gr_utils.h"
+@@ -303,12 +304,20 @@ Return<void> QtiMapper::getMapperExtensions(QtiMapper::getMapperExtensions_cb hi
+ // When we are in passthrough mode, this method is used
+ // by hidl to obtain the SP HAL object
+ extern "C" IMapper_3_0 *HIDL_FETCH_IMapper(const char * /* name */) {
++  if (android::base::GetProperty("ro.hardware.gralloc", "qti-display") != "qti-display") {
++    ALOGD_IF(DEBUG, "Skipping IMapper fetch, not using QTI gralloc");
++    return nullptr;
++  }
+   ALOGD_IF(DEBUG, "Fetching IMapper from QtiMapper");
+   auto mapper = new QtiMapper();
+   return static_cast<IMapper_3_0 *>(mapper);
+ }
+ 
+ extern "C" IQtiMapper *HIDL_FETCH_IQtiMapper(const char * /* name */) {
++  if (android::base::GetProperty("ro.hardware.gralloc", "qti-display") != "qti-display") {
++    ALOGD_IF(DEBUG, "Skipping IQtiMapper fetch, not using QTI gralloc");
++    return nullptr;
++  }
+   ALOGD_IF(DEBUG, "Fetching QtiMapper");
+   return new QtiMapper();
+ }
+diff --git a/gralloc/QtiMapper4.cpp b/gralloc/QtiMapper4.cpp
+index fe12dd0c00..25c0689bdd 100644
+--- a/gralloc/QtiMapper4.cpp
++++ b/gralloc/QtiMapper4.cpp
+@@ -34,6 +34,7 @@
+ #include <cutils/trace.h>
+ #include <qdMetaData.h>
+ #include <sync/sync.h>
++#include <android-base/properties.h>
+ 
+ #include <vector>
+ 
+@@ -476,12 +477,20 @@ Return<void> QtiMapper::getMapperExtensions(QtiMapper::getMapperExtensions_cb hi
+ // When we are in passthrough mode, this method is used
+ // by hidl to obtain the SP HAL object
+ extern "C" IMapper *HIDL_FETCH_IMapper(const char * /* name */) {
++  if (android::base::GetProperty("ro.hardware.gralloc", "qti-display") != "qti-display") {
++    ALOGD_IF(DEBUG, "Skipping IMapper fetch, not using QTI gralloc");
++    return nullptr;
++  }
+   ALOGD_IF(DEBUG, "Fetching IMapper from QtiMapper");
+   auto mapper = new QtiMapper();
+   return static_cast<IMapper *>(mapper);
+ }
+ 
+ extern "C" IQtiMapper *HIDL_FETCH_IQtiMapper(const char * /* name */) {
++  if (android::base::GetProperty("ro.hardware.gralloc", "qti-display") != "qti-display") {
++    ALOGD_IF(DEBUG, "Skipping IQtiMapper fetch, not using QTI gralloc");
++    return nullptr;
++  }
+   ALOGD_IF(DEBUG, "Fetching QtiMapper");
+   return new QtiMapper();
+ }
+diff --git a/gralloc/android.hardware.graphics.mapper-impl-qti-display.xml b/gralloc/android.hardware.graphics.mapper-impl-qti-display.xml
+index 4e5c3ad812..6631001cf9 100644
+--- a/gralloc/android.hardware.graphics.mapper-impl-qti-display.xml
++++ b/gralloc/android.hardware.graphics.mapper-impl-qti-display.xml
+@@ -37,16 +37,6 @@ IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
+             <instance>default</instance>
+         </interface>
+     </hal>
+-    <hal format="hidl">
+-        <name>android.hardware.graphics.mapper</name>
+-        <transport arch="32+64">passthrough</transport>
+-        <version>3.0</version>
+-        <version>4.0</version>
+-        <interface>
+-            <name>IMapper</name>
+-            <instance>default</instance>
+-        </interface>
+-    </hal>
+ </manifest>
+ 
+ 
+diff --git a/gralloc/service.cpp b/gralloc/service.cpp
+index 2b890ffdcb..79a5df84fc 100644
+--- a/gralloc/service.cpp
++++ b/gralloc/service.cpp
+@@ -27,6 +27,7 @@
+  * IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
+  */
+ #include <hidl/LegacySupport.h>
++#include <android-base/properties.h>
+ 
+ #include "QtiAllocator.h"
+ 
+@@ -36,6 +37,11 @@ using IQtiAllocator3 = vendor::qti::hardware::display::allocator::V3_0::IQtiAllo
+ using IQtiAllocator4 = vendor::qti::hardware::display::allocator::V4_0::IQtiAllocator;
+ 
+ int main(int, char **) {
++  if (android::base::GetProperty("ro.hardware.gralloc", "qti-display") != "qti-display") {
++    ALOGD("Skipping QTI Allocator launch, not using QTI gralloc");
++    return 0;
++  }
++
+   android::sp<IQtiAllocator3> service3 =
+       new vendor::qti::hardware::display::allocator::V3_0::implementation::QtiAllocator();
+ 
+diff --git a/gralloc/vendor.qti.hardware.display.allocator-service.xml b/gralloc/vendor.qti.hardware.display.allocator-service.xml
+index 506c58b5e2..5c0add69aa 100644
+--- a/gralloc/vendor.qti.hardware.display.allocator-service.xml
++++ b/gralloc/vendor.qti.hardware.display.allocator-service.xml
+@@ -27,16 +27,6 @@ OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE OF THIS SOFTWARE, EVEN
+ IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
+ -->
+ <manifest version="1.0" type="device">
+-    <hal format="hidl">
+-        <name>android.hardware.graphics.allocator</name>
+-        <transport>hwbinder</transport>
+-        <version>3.0</version>
+-        <version>4.0</version>
+-        <interface>
+-            <name>IAllocator</name>
+-            <instance>default</instance>
+-        </interface>
+-    </hal>
+     <hal format="hidl">
+         <name>vendor.qti.hardware.display.allocator</name>
+         <transport>hwbinder</transport>
+-- 
+2.48.1
+

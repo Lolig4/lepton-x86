@@ -1,0 +1,173 @@
+From ff3f3f1436d1557b29c4fd16e198376ce463a407 Mon Sep 17 00:00:00 2001
+From: Joshua Ashton <joshua@froggi.es>
+Date: Mon, 15 Apr 2024 23:24:47 +0100
+Subject: [PATCH] Support for media stuff on 64-bit only Android
+
+Change-Id: I4a58d1f9df763814184b94c5963bf06382aca18e
+---
+ camera/cameraserver/Android.bp                | 2 +-
+ drm/drmserver/Android.bp                      | 2 +-
+ drm/drmserver/DrmManager.cpp                  | 4 ++--
+ media/libeffects/factory/Android.bp           | 2 +-
+ media/libstagefright/omx/Android.bp           | 2 +-
+ media/libstagefright/omx/tests/Android.bp     | 2 +-
+ media/libstagefright/tests/Android.bp         | 4 ++--
+ media/mediaserver/Android.bp                  | 2 +-
+ services/mediacodec/Android.bp                | 2 +-
+ services/mediaresourcemanager/test/Android.bp | 4 ++--
+ 10 files changed, 13 insertions(+), 13 deletions(-)
+
+diff --git a/camera/cameraserver/Android.bp b/camera/cameraserver/Android.bp
+index dc7f88a49c..2a4e6bd3fe 100644
+--- a/camera/cameraserver/Android.bp
++++ b/camera/cameraserver/Android.bp
+@@ -37,7 +37,7 @@ cc_binary {
+         "android.hardware.camera.device@3.2",
+         "android.hardware.camera.device@3.4",
+     ],
+-    compile_multilib: "32",
++    compile_multilib: "64",
+     cflags: [
+         "-Wall",
+         "-Wextra",
+diff --git a/drm/drmserver/Android.bp b/drm/drmserver/Android.bp
+index 141fe70bbb..d8ee5b212e 100644
+--- a/drm/drmserver/Android.bp
++++ b/drm/drmserver/Android.bp
+@@ -42,7 +42,7 @@ cc_binary {
+         "-Werror",
+     ],
+ 
+-    compile_multilib: "32",
++    compile_multilib: "64",
+ 
+     init_rc: ["drmserver.rc"],
+ }
+diff --git a/drm/drmserver/DrmManager.cpp b/drm/drmserver/DrmManager.cpp
+index 9a32cc5552..ede9c9a291 100644
+--- a/drm/drmserver/DrmManager.cpp
++++ b/drm/drmserver/DrmManager.cpp
+@@ -99,13 +99,13 @@ void DrmManager::onMessageReceived(const sp<AMessage> &msg) {
+         }
+         default:
+         {
+-            ALOGW("Unrecognized message type: %zd", msg->what());
++            ALOGW("Unrecognized message type: %u", msg->what());
+         }
+     }
+ }
+ 
+ int64_t DrmManager::getMetricsFlushPeriodUs() {
+-    return 1000 * 1000 * std::max(1ll, property_get_int64("drmmanager.metrics.period", 86400));
++    return 1000 * 1000 * std::max<int64_t>(1ll, property_get_int64("drmmanager.metrics.period", 86400));
+ }
+ 
+ void DrmManager::recordEngineMetrics(
+diff --git a/media/libeffects/factory/Android.bp b/media/libeffects/factory/Android.bp
+index ddbfdd8c54..0a4d97ad28 100644
+--- a/media/libeffects/factory/Android.bp
++++ b/media/libeffects/factory/Android.bp
+@@ -39,7 +39,7 @@ cc_binary {
+     vendor: true,
+     srcs: ["test/DumpConfig.cpp"],
+ 
+-    compile_multilib: "32",
++    compile_multilib: "64",
+ 
+     cflags: [
+         "-Wall",
+diff --git a/media/libstagefright/omx/Android.bp b/media/libstagefright/omx/Android.bp
+index f3ca086ab2..b71da796f3 100644
+--- a/media/libstagefright/omx/Android.bp
++++ b/media/libstagefright/omx/Android.bp
+@@ -192,7 +192,7 @@ cc_defaults {
+         cfi: true,
+     },
+ 
+-    compile_multilib: "32",
++    compile_multilib: "64",
+ }
+ 
+ cc_library_shared {
+diff --git a/media/libstagefright/omx/tests/Android.bp b/media/libstagefright/omx/tests/Android.bp
+index fefb3bb3f4..b053e0493a 100644
+--- a/media/libstagefright/omx/tests/Android.bp
++++ b/media/libstagefright/omx/tests/Android.bp
+@@ -32,5 +32,5 @@ cc_test {
+         "-Wall",
+     ],
+ 
+-    compile_multilib: "32",
++    compile_multilib: "64",
+ }
+diff --git a/media/libstagefright/tests/Android.bp b/media/libstagefright/tests/Android.bp
+index 62be2fbf98..b07469a098 100644
+--- a/media/libstagefright/tests/Android.bp
++++ b/media/libstagefright/tests/Android.bp
+@@ -36,7 +36,7 @@ cc_test {
+         "-Wall",
+     ],
+ 
+-    compile_multilib: "32",
++    compile_multilib: "64",
+ }
+ 
+ cc_test {
+@@ -59,7 +59,7 @@ cc_test {
+         "frameworks/native/include/media/openmax",
+     ],
+ 
+-    compile_multilib: "32",
++    compile_multilib: "64",
+ 
+     cflags: [
+         "-Werror",
+diff --git a/media/mediaserver/Android.bp b/media/mediaserver/Android.bp
+index 1759ff66f6..260e36144f 100644
+--- a/media/mediaserver/Android.bp
++++ b/media/mediaserver/Android.bp
+@@ -38,7 +38,7 @@ cc_binary {
+     ],
+ 
+     // back to 32-bit, b/126502613
+-    compile_multilib: "32",
++    compile_multilib: "64",
+ 
+     init_rc: ["mediaserver.rc"],
+ 
+diff --git a/services/mediacodec/Android.bp b/services/mediacodec/Android.bp
+index c4efbaa141..dc754f2b3f 100644
+--- a/services/mediacodec/Android.bp
++++ b/services/mediacodec/Android.bp
+@@ -114,7 +114,7 @@ cc_binary {
+     ],
+ 
+     // OMX interfaces force this to stay in 32-bit mode;
+-    compile_multilib: "32",
++    compile_multilib: "64",
+ 
+     init_rc: ["android.hardware.media.omx@1.0-service.rc"],
+ 
+diff --git a/services/mediaresourcemanager/test/Android.bp b/services/mediaresourcemanager/test/Android.bp
+index b6c548c9dc..6f2870031c 100644
+--- a/services/mediaresourcemanager/test/Android.bp
++++ b/services/mediaresourcemanager/test/Android.bp
+@@ -19,7 +19,7 @@ cc_test {
+         "-Werror",
+         "-Wall",
+     ],
+-    compile_multilib: "32",
++    compile_multilib: "64",
+ }
+ 
+ cc_test {
+@@ -40,5 +40,5 @@ cc_test {
+         "-Werror",
+         "-Wall",
+     ],
+-    compile_multilib: "32",
++    compile_multilib: "64",
+ }
+-- 
+2.44.0
+

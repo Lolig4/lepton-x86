@@ -1,0 +1,72 @@
+From 2e2d0b5234c17c0b4f472376a212626a596e703a Mon Sep 17 00:00:00 2001
+From: Franz-Josef Haider <frajo@frajo.fi>
+Date: Fri, 19 Jun 2026 16:01:50 +0300
+Subject: [PATCH 1/1] lepton: Reboot if zygote fails.
+
+Change-Id: Ief904a4f7f19b4028d23e8a7253baa508eaa700a
+---
+ rootdir/init.zygote32.rc    | 1 +
+ rootdir/init.zygote32_64.rc | 2 ++
+ rootdir/init.zygote64.rc    | 1 +
+ rootdir/init.zygote64_32.rc | 2 ++
+ 4 files changed, 6 insertions(+)
+
+diff --git a/rootdir/init.zygote32.rc b/rootdir/init.zygote32.rc
+index e827cf557..d76047864 100644
+--- a/rootdir/init.zygote32.rc
++++ b/rootdir/init.zygote32.rc
+@@ -12,4 +12,5 @@ service zygote /system/bin/app_process -Xzygote /system/bin --zygote --start-sys
+     onrestart restart media
+     onrestart restart netd
+     onrestart restart wificond
++    reboot_on_failure reboot
+     writepid /dev/cpuset/foreground/tasks
+diff --git a/rootdir/init.zygote32_64.rc b/rootdir/init.zygote32_64.rc
+index fe6dcfa47..fd88a2919 100644
+--- a/rootdir/init.zygote32_64.rc
++++ b/rootdir/init.zygote32_64.rc
+@@ -12,6 +12,7 @@ service zygote /system/bin/app_process32 -Xzygote /system/bin --zygote --start-s
+     onrestart restart media
+     onrestart restart netd
+     onrestart restart wificond
++    reboot_on_failure reboot
+     writepid /dev/cpuset/foreground/tasks
+ 
+ service zygote_secondary /system/bin/app_process64 -Xzygote /system/bin --zygote --socket-name=zygote_secondary
+@@ -22,4 +23,5 @@ service zygote_secondary /system/bin/app_process64 -Xzygote /system/bin --zygote
+     socket zygote_secondary stream 660 root system
+     socket usap_pool_secondary stream 660 root system
+     onrestart restart zygote
++    reboot_on_failure reboot
+     writepid /dev/cpuset/foreground/tasks
+diff --git a/rootdir/init.zygote64.rc b/rootdir/init.zygote64.rc
+index adc703102..3db6a6a15 100644
+--- a/rootdir/init.zygote64.rc
++++ b/rootdir/init.zygote64.rc
+@@ -12,4 +12,5 @@ service zygote /system/bin/app_process64 -Xzygote /system/bin --zygote --start-s
+     onrestart restart media
+     onrestart restart netd
+     onrestart restart wificond
++    reboot_on_failure reboot
+     writepid /dev/cpuset/foreground/tasks
+diff --git a/rootdir/init.zygote64_32.rc b/rootdir/init.zygote64_32.rc
+index fb9e99b69..dad11c28f 100644
+--- a/rootdir/init.zygote64_32.rc
++++ b/rootdir/init.zygote64_32.rc
+@@ -12,6 +12,7 @@ service zygote /system/bin/app_process64 -Xzygote /system/bin --zygote --start-s
+     onrestart restart media
+     onrestart restart netd
+     onrestart restart wificond
++    reboot_on_failure reboot
+     task_profiles ProcessCapacityHigh MaxPerformance
+ 
+ service zygote_secondary /system/bin/app_process32 -Xzygote /system/bin --zygote --socket-name=zygote_secondary --enable-lazy-preload
+@@ -22,4 +23,5 @@ service zygote_secondary /system/bin/app_process32 -Xzygote /system/bin --zygote
+     socket zygote_secondary stream 660 root system
+     socket usap_pool_secondary stream 660 root system
+     onrestart restart zygote
++    reboot_on_failure reboot
+     task_profiles ProcessCapacityHigh MaxPerformance
+-- 
+2.54.0
+

@@ -1,0 +1,75 @@
+From 1b6f2b21eb4f9f61ec8957c4d90d9c549d878762 Mon Sep 17 00:00:00 2001
+From: Franz-Josef Haider <frajo@frajo.fi>
+Date: Mon, 22 Jun 2026 19:44:13 +0300
+Subject: [PATCH 16/21] lepton: Disable uevent_listener_ in init.
+
+Change-Id: I88840b0efc0917b0292e9767eeb222f0eed2171e
+---
+ init/block_dev_initializer.cpp | 11 ++++++++++-
+ 1 file changed, 10 insertions(+), 1 deletion(-)
+
+diff --git a/init/block_dev_initializer.cpp b/init/block_dev_initializer.cpp
+index 05e00edfda..b34fa805c6 100644
+--- a/init/block_dev_initializer.cpp
++++ b/init/block_dev_initializer.cpp
+@@ -29,7 +29,7 @@ namespace init {
+ using android::base::Timer;
+ using namespace std::chrono_literals;
+ 
+-BlockDevInitializer::BlockDevInitializer() : uevent_listener_(16 * 1024 * 1024) {
++BlockDevInitializer::BlockDevInitializer() {// : uevent_listener_(16 * 1024 * 1024) {
+     auto boot_devices = android::fs_mgr::GetBootDevices();
+     device_handler_ = std::make_unique<DeviceHandler>(
+             std::vector<Permissions>{}, std::vector<SysfsPermissions>{}, std::vector<Subsystem>{},
+@@ -45,6 +45,8 @@ bool BlockDevInitializer::InitDmUser(const std::string& name) {
+ }
+ 
+ bool BlockDevInitializer::InitMiscDevice(const std::string& name) {
++    (void)name;
++#if 0
+     const std::string dm_path = "/devices/virtual/misc/" + name;
+     bool found = false;
+     auto dm_callback = [this, &dm_path, &found](const Uevent& uevent) {
+@@ -66,6 +68,7 @@ bool BlockDevInitializer::InitMiscDevice(const std::string& name) {
+         LOG(ERROR) << name << " device not found after polling timeout";
+         return false;
+     }
++#endif
+     return true;
+ }
+ 
+@@ -104,6 +107,8 @@ ListenerAction BlockDevInitializer::HandleUevent(const Uevent& uevent,
+ }
+ 
+ bool BlockDevInitializer::InitDevices(std::set<std::string> devices) {
++    (void)devices;
++#if 0
+     auto uevent_callback = [&, this](const Uevent& uevent) -> ListenerAction {
+         return HandleUevent(uevent, &devices);
+     };
+@@ -125,11 +130,14 @@ bool BlockDevInitializer::InitDevices(std::set<std::string> devices) {
+                    << android::base::Join(devices, ", ");
+         return false;
+     }
++#endif
+     return true;
+ }
+ 
+ // Creates "/dev/block/dm-XX" for dm nodes by running coldboot on /sys/block/dm-XX.
+ bool BlockDevInitializer::InitDmDevice(const std::string& device) {
++    (void)device;
++#if 0
+     const std::string device_name(basename(device.c_str()));
+     const std::string syspath = "/sys/block/" + device_name;
+     bool found = false;
+@@ -155,6 +163,7 @@ bool BlockDevInitializer::InitDmDevice(const std::string& device) {
+         LOG(ERROR) << "dm device '" << device << "' not found after polling timeout";
+         return false;
+     }
++#endif
+     return true;
+ }
+ 
+-- 
+2.55.0
+

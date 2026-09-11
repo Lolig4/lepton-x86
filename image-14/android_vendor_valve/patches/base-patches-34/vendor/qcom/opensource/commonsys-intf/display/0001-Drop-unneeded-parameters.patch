@@ -1,0 +1,111 @@
+From 8d5a3cc77ea44e341a7b7c413a9e9a235f0b5dc0 Mon Sep 17 00:00:00 2001
+From: Franz-Josef Haider <frajo@frajo.fi>
+Date: Mon, 22 Jun 2026 07:51:23 +0300
+Subject: [PATCH] Drop unneeded parameters.
+
+---
+ Android.bp               |  5 -----
+ gralloc/QtiGrallocPriv.h | 20 --------------------
+ gralloc/gr_priv_handle.h | 20 --------------------
+ 3 files changed, 45 deletions(-)
+
+diff --git a/Android.bp b/Android.bp
+index 6365da16..801f8084 100644
+--- a/Android.bp
++++ b/Android.bp
+@@ -4,11 +4,6 @@ soong_namespace {
+ cc_library_headers {
+     name: "display_intf_headers",
+     vendor_available: true,
+-    defaults: [
+-        "gralloc_handle_has_custom_content_md_reserved_size_defaults",
+-        "gralloc_handle_has_reserved_size_defaults",
+-        "gralloc_handle_has_ubwcp_format_defaults",
+-    ],
+     export_include_dirs: [
+         "gralloc",
+         "include",
+diff --git a/gralloc/QtiGrallocPriv.h b/gralloc/QtiGrallocPriv.h
+index 40549e2c..e8d203bf 100644
+--- a/gralloc/QtiGrallocPriv.h
++++ b/gralloc/QtiGrallocPriv.h
+@@ -149,18 +149,8 @@ struct private_handle_t : public native_handle_t {
+   uint64_t base;
+   uint64_t base_metadata;
+   uint64_t gpuaddr;
+-#ifdef GRALLOC_HANDLE_HAS_RESERVED_SIZE
+-  unsigned int reserved_size;
+-#endif
+-#ifdef GRALLOC_HANDLE_HAS_CUSTOM_CONTENT_MD_RESERVED_SIZE
+-  unsigned int custom_content_md_reserved_size;
+-#endif
+   static const int kNumFds = 2;
+   static const int kMagic = 'gmsm';
+-#ifdef GRALLOC_HANDLE_HAS_UBWCP_FORMAT
+-  unsigned int linear_size;
+-  int ubwcp_format;
+-#endif
+ 
+   static inline int NumInts() {
+     return ((sizeof(private_handle_t) - sizeof(native_handle_t)) / sizeof(int)) - kNumFds;
+@@ -187,16 +177,6 @@ struct private_handle_t : public native_handle_t {
+         base(0),
+         base_metadata(0),
+         gpuaddr(0)
+-#ifdef GRALLOC_HANDLE_HAS_RESERVED_SIZE
+-        ,reserved_size(0)
+-#endif
+-#ifdef GRALLOC_HANDLE_HAS_CUSTOM_CONTENT_MD_RESERVED_SIZE
+-        ,custom_content_md_reserved_size(0)
+-#endif
+-#ifdef GRALLOC_HANDLE_HAS_UBWCP_FORMAT
+-        ,linear_size(0)
+-        ,ubwcp_format(format)
+-#endif
+   {
+     version = static_cast<int>(sizeof(native_handle));
+     numInts = NumInts();
+diff --git a/gralloc/gr_priv_handle.h b/gralloc/gr_priv_handle.h
+index e72c0b7e..c881bb4d 100644
+--- a/gralloc/gr_priv_handle.h
++++ b/gralloc/gr_priv_handle.h
+@@ -104,19 +104,9 @@ struct private_handle_t {
+   uint64_t base;
+   uint64_t base_metadata;
+   uint64_t gpuaddr;
+-#ifdef GRALLOC_HANDLE_HAS_RESERVED_SIZE
+-  unsigned int reserved_size;
+-#endif
+-#ifdef GRALLOC_HANDLE_HAS_CUSTOM_CONTENT_MD_RESERVED_SIZE
+-  unsigned int custom_content_md_reserved_size;
+-#endif
+ #ifdef __cplusplus
+   static const int kNumFds = 2;
+   static const int kMagic = 'gmsm';
+-#ifdef GRALLOC_HANDLE_HAS_UBWCP_FORMAT
+-  unsigned int linear_size;
+-  int ubwcp_format;
+-#endif
+ 
+   static inline int NumInts() {
+     return ((sizeof(private_handle_t) - sizeof(native_handle_t)) / sizeof(int)) - kNumFds;
+@@ -143,16 +133,6 @@ struct private_handle_t {
+         base(0),
+         base_metadata(0),
+         gpuaddr(0)
+-#ifdef GRALLOC_HANDLE_HAS_RESERVED_SIZE
+-        ,reserved_size(0)
+-#endif
+-#ifdef GRALLOC_HANDLE_HAS_CUSTOM_CONTENT_MD_RESERVED_SIZE
+-        ,custom_content_md_reserved_size(0)
+-#endif
+-#ifdef GRALLOC_HANDLE_HAS_UBWCP_FORMAT
+-        ,linear_size(0)
+-        ,ubwcp_format(format)
+-#endif
+   {
+     version = static_cast<int>(sizeof(native_handle));
+     numInts = NumInts();
+-- 
+2.55.0
+

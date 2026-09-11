@@ -1,0 +1,27 @@
+From 6b2bb6dd4df047bf47cf316683366e27a9b96956 Mon Sep 17 00:00:00 2001
+From: Franz-Josef Haider <frajo@frajo.fi>
+Date: Tue, 26 May 2026 11:37:18 +0300
+Subject: [PATCH 1/4] lepton: Prevent a crash in ConnectivityService.
+
+Change-Id: I31431481698f78c332f52f946163d973c33921c1
+---
+ service/src/com/android/server/ConnectivityService.java | 2 ++
+ 1 file changed, 2 insertions(+)
+
+diff --git a/service/src/com/android/server/ConnectivityService.java b/service/src/com/android/server/ConnectivityService.java
+index 6839c22d06..bacfd41251 100755
+--- a/service/src/com/android/server/ConnectivityService.java
++++ b/service/src/com/android/server/ConnectivityService.java
+@@ -1819,7 +1819,9 @@ public class ConnectivityService extends IConnectivityManager.Stub
+         // To ensure uid state is synchronized with Network Policy, register for
+         // NetworkPolicyManagerService events must happen prior to NetworkPolicyManagerService
+         // reading existing policy from disk.
++        if (mPolicyManager != null) {
+         mPolicyManager.registerNetworkPolicyCallback(null, mPolicyCallback);
++        }
+ 
+         final PowerManager powerManager = (PowerManager) context.getSystemService(
+                 Context.POWER_SERVICE);
+-- 
+2.55.0
+

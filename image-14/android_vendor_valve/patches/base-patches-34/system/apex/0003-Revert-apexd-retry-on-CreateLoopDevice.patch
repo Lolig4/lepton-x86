@@ -1,0 +1,49 @@
+From e047561ddd552f31126d134878a93399316e104d Mon Sep 17 00:00:00 2001
+From: Franz-Josef Haider <frajo@frajo.fi>
+Date: Mon, 22 Jun 2026 17:05:07 +0300
+Subject: [PATCH 3/3] Revert "apexd: retry on CreateLoopDevice"
+
+This reverts commit 100cbe048304aa519e07ff3962b230afa989b499.
+---
+ apexd/apexd_loop.cpp | 18 ++----------------
+ 1 file changed, 2 insertions(+), 16 deletions(-)
+
+diff --git a/apexd/apexd_loop.cpp b/apexd/apexd_loop.cpp
+index e15a7fa8..1ae573d8 100644
+--- a/apexd/apexd_loop.cpp
++++ b/apexd/apexd_loop.cpp
+@@ -497,12 +497,7 @@ Result<LoopbackDeviceUniqueFd> CreateLoopDevice(const std::string& target,
+ 
+   Result<void> configure_status = ConfigureLoopDevice(
+       loop_device->device_fd.get(), target, image_offset, image_size);
+-  if (!configure_status.ok() && configure_status.error().code() == EBUSY) {
+-    // EBUSY means that loop device was bound to a different process. We need to call
+-    // CloseGood() here to ensure that when destroying LoopbackDeviceUniqueFd we
+-    // don't call LOOP_CLR_FD ioctl on this loop device, essentially clearing the
+-    // loop device while other process is using it.
+-    loop_device->CloseGood();
++  if (!configure_status.ok()) {
+     return configure_status.error();
+   }
+ 
+@@ -519,16 +514,7 @@ Result<LoopbackDeviceUniqueFd> CreateAndConfigureLoopDevice(
+   // Unfortunately, this will require some refactoring of how we manage loop
+   // devices, and probably some new loop-control ioctls, so for the time being
+   // we just limit the scope that requires locking.
+-  android::base::Timer timer;
+-  Result<LoopbackDeviceUniqueFd> loop_device;
+-  while (timer.duration() < 1s) {
+-    loop_device = CreateLoopDevice(target, image_offset, image_size);
+-    if (loop_device.ok()) {
+-      break;
+-    }
+-    std::this_thread::sleep_for(5ms);
+-  }
+-
++  auto loop_device = CreateLoopDevice(target, image_offset, image_size);
+   if (!loop_device.ok()) {
+     return loop_device.error();
+   }
+-- 
+2.55.0
+

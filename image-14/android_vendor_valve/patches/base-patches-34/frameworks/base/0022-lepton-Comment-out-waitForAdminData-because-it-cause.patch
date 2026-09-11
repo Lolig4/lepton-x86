@@ -1,0 +1,41 @@
+From 42fa16d2ba5578ee2aae39903d6db630d344cc96 Mon Sep 17 00:00:00 2001
+From: Franz-Josef Haider <frajo@frajo.fi>
+Date: Mon, 25 May 2026 14:55:33 +0300
+Subject: [PATCH 22/22] lepton: Comment out waitForAdminData because it causes
+ crashes.
+
+Change-Id: I1c8f1cba7252c8b378e7e1c25faa2da31b7b753c
+---
+ .../java/com/android/server/usage/AppStandbyController.java     | 2 +-
+ .../com/android/server/net/NetworkPolicyManagerService.java     | 2 +-
+ 2 files changed, 2 insertions(+), 2 deletions(-)
+
+diff --git a/apex/jobscheduler/service/java/com/android/server/usage/AppStandbyController.java b/apex/jobscheduler/service/java/com/android/server/usage/AppStandbyController.java
+index 19bc7160e16a..fc196e2b3ba3 100644
+--- a/apex/jobscheduler/service/java/com/android/server/usage/AppStandbyController.java
++++ b/apex/jobscheduler/service/java/com/android/server/usage/AppStandbyController.java
+@@ -2889,7 +2889,7 @@ public class AppStandbyController
+ 
+                 case MSG_ONE_TIME_CHECK_IDLE_STATES:
+                     mHandler.removeMessages(MSG_ONE_TIME_CHECK_IDLE_STATES);
+-                    waitForAdminData();
++                    //waitForAdminData();
+                     checkIdleStates(UserHandle.USER_ALL);
+                     break;
+ 
+diff --git a/services/core/java/com/android/server/net/NetworkPolicyManagerService.java b/services/core/java/com/android/server/net/NetworkPolicyManagerService.java
+index 18b495bfce5d..4727d90ea662 100644
+--- a/services/core/java/com/android/server/net/NetworkPolicyManagerService.java
++++ b/services/core/java/com/android/server/net/NetworkPolicyManagerService.java
+@@ -1036,7 +1036,7 @@ public class NetworkPolicyManagerService extends INetworkPolicyManager.Stub {
+ 
+                     mSystemReady = true;
+ 
+-                    waitForAdminData();
++                    //waitForAdminData();
+ 
+                     // read policy from disk
+                     readPolicyAL();
+-- 
+2.55.0
+

@@ -1,0 +1,51 @@
+From e5e95179f04413c28e9dcc680c7c706a9097e670 Mon Sep 17 00:00:00 2001
+From: Franz-Josef Haider <frajo@frajo.fi>
+Date: Thu, 6 Aug 2026 17:39:18 +0300
+Subject: [PATCH 1/2] lepton: Don't prepare /data/media/0 directory as in
+ lepton it's a symlink to compatdata/appid/external
+
+Change-Id: I4592bcf99d0617b28b27f421bc961b4922d8dba0
+---
+ FsCrypt.cpp | 10 +++++-----
+ 1 file changed, 5 insertions(+), 5 deletions(-)
+
+diff --git a/FsCrypt.cpp b/FsCrypt.cpp
+index 33518ea9..541997b0 100644
+--- a/FsCrypt.cpp
++++ b/FsCrypt.cpp
+@@ -954,7 +954,7 @@ bool fscrypt_prepare_user_storage(const std::string& volume_uuid, userid_t user_
+         auto system_ce_path = android::vold::BuildDataSystemCePath(user_id);
+         auto misc_ce_path = android::vold::BuildDataMiscCePath(volume_uuid, user_id);
+         auto vendor_ce_path = android::vold::BuildDataVendorCePath(user_id);
+-        auto media_ce_path = android::vold::BuildDataMediaCePath(volume_uuid, user_id);
++        //auto media_ce_path = android::vold::BuildDataMediaCePath(volume_uuid, user_id);
+         auto user_ce_path = android::vold::BuildDataUserCePath(volume_uuid, user_id);
+ 
+         if (IsFbeEnabled()) {
+@@ -981,8 +981,8 @@ bool fscrypt_prepare_user_storage(const std::string& volume_uuid, userid_t user_
+             if (!prepare_dir_with_policy(vendor_ce_path, 0771, AID_ROOT, AID_ROOT, ce_policy))
+                 return false;
+         }
+-        if (!prepare_dir_with_policy(media_ce_path, 02770, AID_MEDIA_RW, AID_MEDIA_RW, ce_policy))
+-            return false;
++        //if (!prepare_dir_with_policy(media_ce_path, 02770, AID_MEDIA_RW, AID_MEDIA_RW, ce_policy))
++        //    return false;
+         // On devices without sdcardfs (kernel 5.4+), the path permissions aren't fixed
+         // up automatically; therefore, use a default ACL, to ensure apps with MEDIA_RW
+         // can keep reading external storage; in particular, this allows app cloning
+@@ -1022,10 +1022,10 @@ bool fscrypt_destroy_user_storage(const std::string& volume_uuid, userid_t user_
+         auto system_ce_path = android::vold::BuildDataSystemCePath(user_id);
+         auto misc_ce_path = android::vold::BuildDataMiscCePath(volume_uuid, user_id);
+         auto vendor_ce_path = android::vold::BuildDataVendorCePath(user_id);
+-        auto media_ce_path = android::vold::BuildDataMediaCePath(volume_uuid, user_id);
++        //auto media_ce_path = android::vold::BuildDataMediaCePath(volume_uuid, user_id);
+         auto user_ce_path = android::vold::BuildDataUserCePath(volume_uuid, user_id);
+ 
+-        res &= destroy_dir(media_ce_path);
++        //res &= destroy_dir(media_ce_path);
+         res &= destroy_dir(misc_ce_path);
+         res &= destroy_dir(user_ce_path);
+         if (volume_uuid.empty()) {
+-- 
+2.55.0
+

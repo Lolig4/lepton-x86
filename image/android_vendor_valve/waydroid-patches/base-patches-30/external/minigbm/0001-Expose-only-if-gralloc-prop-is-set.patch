@@ -1,0 +1,64 @@
+From e3a4c04a9713872d6abee98ff1216b3020bbadc2 Mon Sep 17 00:00:00 2001
+From: Mark Collins <mark@igalia.com>
+Date: Thu, 24 Apr 2025 14:44:32 +0000
+Subject: [PATCH] Expose only if gralloc prop is set
+
+Only exposes MiniGBM gralloc if the ro.hardware.gralloc prop is set
+to 'minigbm_msm'.
+---
+ cros_gralloc/gralloc4/CrosGralloc4AllocatorService.cc | 8 ++++++++
+ cros_gralloc/gralloc4/CrosGralloc4Mapper.cc           | 6 ++++++
+ 2 files changed, 14 insertions(+)
+
+diff --git a/cros_gralloc/gralloc4/CrosGralloc4AllocatorService.cc b/cros_gralloc/gralloc4/CrosGralloc4AllocatorService.cc
+index 99bc92e..2ecd523 100644
+--- a/cros_gralloc/gralloc4/CrosGralloc4AllocatorService.cc
++++ b/cros_gralloc/gralloc4/CrosGralloc4AllocatorService.cc
+@@ -7,6 +7,7 @@
+ #define LOG_TAG "AllocatorService"
+ 
+ #include <hidl/LegacySupport.h>
++#include <android-base/properties.h>
+ 
+ #include "cros_gralloc/gralloc4/CrosGralloc4Allocator.h"
+ 
+@@ -16,6 +17,13 @@ using android::hardware::joinRpcThreadpool;
+ using android::hardware::graphics::mapper::V4_0::Error;
+ 
+ int main(int, char**) {
++    std::string grallocProp = android::base::GetProperty("ro.hardware.gralloc", "minigbm_msm");
++    if (grallocProp != "minigbm_msm") {
++        ALOGD("Skipping Cros Gralloc 4.0 Allocator launch, not using MiniGBM gralloc (%s)", 
++              grallocProp.c_str());
++        return 0;
++    }
++
+     sp<CrosGralloc4Allocator> allocator = new CrosGralloc4Allocator();
+     if (allocator->init() != Error::NONE) {
+         ALOGE("Failed to initialize IAllocator 4.0 service.");
+diff --git a/cros_gralloc/gralloc4/CrosGralloc4Mapper.cc b/cros_gralloc/gralloc4/CrosGralloc4Mapper.cc
+index 46afd9b..c3ba3ce 100644
+--- a/cros_gralloc/gralloc4/CrosGralloc4Mapper.cc
++++ b/cros_gralloc/gralloc4/CrosGralloc4Mapper.cc
+@@ -12,6 +12,7 @@
+ #include <aidl/android/hardware/graphics/common/Rect.h>
+ #include <cutils/native_handle.h>
+ #include <gralloctypes/Gralloc4.h>
++#include <android-base/properties.h>
+ 
+ #include "cros_gralloc/cros_gralloc_helpers.h"
+ #include "cros_gralloc/gralloc4/CrosGralloc4Utils.h"
+@@ -1140,5 +1141,10 @@ Return<void> CrosGralloc4Mapper::getReservedRegion(void* rawHandle, getReservedR
+ }
+ 
+ android::hardware::graphics::mapper::V4_0::IMapper* HIDL_FETCH_IMapper(const char* /*name*/) {
++    std::string grallocProp = android::base::GetProperty("ro.hardware.gralloc", "minigbm_msm");
++    if (grallocProp != "minigbm_msm") {
++        ALOGD("Skipping IMapper fetch, not using MiniGBM gralloc %s", grallocProp.c_str());
++        return nullptr;
++    }
+     return static_cast<android::hardware::graphics::mapper::V4_0::IMapper*>(new CrosGralloc4Mapper);
+ }
+-- 
+2.48.1
+

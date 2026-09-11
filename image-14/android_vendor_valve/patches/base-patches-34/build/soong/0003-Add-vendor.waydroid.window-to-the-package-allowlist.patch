@@ -1,0 +1,23 @@
+From df63c3e110317949ec65ec9358947fb42210ad0a Mon Sep 17 00:00:00 2001
+From: Franz-Josef Haider <frajo@frajo.fi>
+Date: Mon, 25 May 2026 14:53:00 +0300
+Subject: [PATCH 3/4] Add vendor.waydroid.window to the package allowlist.
+
+Change-Id: I46fee53bbcab6be70149a016e074e4683906ae89
+---
+ scripts/check_boot_jars/package_allowed_list.txt | 2 ++
+ 1 file changed, 2 insertions(+)
+
+diff --git a/scripts/check_boot_jars/package_allowed_list.txt b/scripts/check_boot_jars/package_allowed_list.txt
+index 47eae0769d..7bd44867b6 100644
+--- a/scripts/check_boot_jars/package_allowed_list.txt
++++ b/scripts/check_boot_jars/package_allowed_list.txt
+@@ -258,3 +258,5 @@ com\.google\.i18n\.phonenumbers
+ # Packages used for Android in Chrome OS
+ org\.chromium\.arc
+ org\.chromium\.arc\..*
++
++vendor.waydroid.window.*
+-- 
+2.55.0
+

@@ -1,0 +1,47 @@
+From e6ee27ba1b63690282acb1da0cda79fcd772eb51 Mon Sep 17 00:00:00 2001
+From: Franz-Josef Haider <frajo@frajo.fi>
+Date: Thu, 25 Jun 2026 23:29:14 +0300
+Subject: [PATCH 20/21] lepton: Don't prevent services from starting.
+
+Change-Id: I9817fe4b502a1195ef9183062936416427b9fef6
+---
+ init/service.cpp | 4 ++++
+ 1 file changed, 4 insertions(+)
+
+diff --git a/init/service.cpp b/init/service.cpp
+index 6f8c7614a4..71d637dcb0 100644
+--- a/init/service.cpp
++++ b/init/service.cpp
+@@ -418,12 +418,14 @@ Result<void> Service::ExecStart() {
+         }
+     });
+ 
++#if 0
+     if (is_updatable() && !IsDefaultMountNamespaceReady()) {
+         // Don't delay the service for ExecStart() as the semantic is that
+         // the caller might depend on the side effect of the execution.
+         return Error() << "Cannot start an updatable service '" << name_
+                        << "' before configs from APEXes are all loaded";
+     }
++#endif
+ 
+     flags_ |= SVC_ONESHOT;
+ 
+@@ -579,12 +581,14 @@ Result<void> Service::Start() {
+         }
+     });
+ 
++#if 0
+     if (is_updatable() && !IsDefaultMountNamespaceReady()) {
+         ServiceList::GetInstance().DelayService(*this);
+         return Error() << "Cannot start an updatable service '" << name_
+                        << "' before configs from APEXes are all loaded. "
+                        << "Queued for execution.";
+     }
++#endif
+ 
+     bool disabled = (flags_ & (SVC_DISABLED | SVC_RESET));
+     ResetFlagsForStart();
+-- 
+2.55.0
+

@@ -1,0 +1,32 @@
+From 40186eb938e4977996e2728d48dbdf7ccb851b5f Mon Sep 17 00:00:00 2001
+From: Elliot Saba <sabae@valvesoftware.com>
+Date: Fri, 17 Jan 2025 12:34:02 -0800
+Subject: [PATCH 11/11] lepton: Disable some services we don't need
+
+Change-Id: I5cfe3afd2747ca62d7ad6796cc29cfc8bc7fd301
+---
+ lineage/res/res/values/config.xml | 7 +++----
+ 1 file changed, 3 insertions(+), 4 deletions(-)
+
+diff --git a/lineage/res/res/values/config.xml b/lineage/res/res/values/config.xml
+index bfd4ba70..dea94c2a 100644
+--- a/lineage/res/res/values/config.xml
++++ b/lineage/res/res/values/config.xml
+@@ -101,11 +101,10 @@
+     <!-- Defines external services to be started by the LineageSystemServer at boot. The service itself
+          should publish as a binder services in its onStart -->
+     <string-array name="config_externalLineageServices">
+-        <item>org.lineageos.platform.internal.ProfileManagerService</item>
++        <!-- <item>org.lineageos.platform.internal.ProfileManagerService</item> -->
+         <item>org.lineageos.platform.internal.LineageHardwareService</item>
+-        <item>org.lineageos.platform.internal.PerformanceManagerService</item>
+-        <item>org.lineageos.platform.internal.display.LiveDisplayService</item>
+-        <item>org.lineageos.platform.internal.LineageAudioService</item>
++        <!-- <item>org.lineageos.platform.internal.PerformanceManagerService</item> -->
++        <!-- <item>org.lineageos.platform.internal.LineageAudioService</item> -->
+         <item>org.lineageos.platform.internal.TrustInterfaceService</item>
+         <item>org.lineageos.platform.internal.LineageSettingsService</item>
+         <item>org.lineageos.platform.internal.LineageGlobalActionsService</item>
+-- 
+2.53.0
+

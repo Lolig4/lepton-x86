@@ -1,0 +1,58 @@
+From 56c48636b350d20a29164793d06015194898f7e1 Mon Sep 17 00:00:00 2001
+From: Elliot Saba <sabae@valvesoftware.com>
+Date: Tue, 12 Nov 2024 02:07:08 +0000
+Subject: [PATCH] Disable `lmkd`
+
+Change-Id: I74f59beb8d4983c8c9e451b85ac84aae7ba2aebb
+---
+ Android.bp                                | 28 -----------------------
+ tests/{Android.bp => Android.bp.disabled} |  0
+ 2 files changed, 28 deletions(-)
+ rename tests/{Android.bp => Android.bp.disabled} (100%)
+
+diff --git a/Android.bp b/Android.bp
+index f177b0d..6cba174 100644
+--- a/Android.bp
++++ b/Android.bp
+@@ -10,34 +10,6 @@ cc_defaults {
+     },
+ }
+ 
+-cc_binary {
+-    name: "lmkd",
+-
+-    srcs: ["lmkd.cpp"],
+-    shared_libs: [
+-        "libcutils",
+-        "liblog",
+-        "libprocessgroup",
+-        "libpsi",
+-        "libstatssocket",
+-    ],
+-    static_libs: [
+-        "libstatslogc",
+-        "libstatslog_lmkd",
+-        "liblmkd_utils",
+-    ],
+-    local_include_dirs: ["include"],
+-    cflags: [
+-        "-Wall",
+-        "-Werror",
+-        "-Wextra",
+-        "-DLMKD_TRACE_KILLS"
+-    ],
+-    init_rc: ["lmkd.rc"],
+-    defaults: ["stats_defaults"],
+-    logtags: ["event.logtags"],
+-}
+-
+ cc_library_static {
+     name: "libstatslogc",
+     srcs: ["statslog.cpp"],
+diff --git a/tests/Android.bp b/tests/Android.bp.disabled
+similarity index 100%
+rename from tests/Android.bp
+rename to tests/Android.bp.disabled
+-- 
+2.34.1
+

@@ -1,0 +1,84 @@
+From 41c04651198bf979653c7b318aa18434d91358b3 Mon Sep 17 00:00:00 2001
+From: Elliot Saba <sabae@valvesoftware.com>
+Date: Wed, 30 Oct 2024 16:30:31 -0700
+Subject: [PATCH] disable all Car tests
+
+Change-Id: Ib99a4b3e39b978c491e2a0a6675f92b1d90cea5c
+---
+ packages/CarActivityResolver/{Android.bp => Android.bp.disabled}  | 0
+ tests/BugReportApp/{Android.bp => Android.bp.disabled}            | 0
+ tests/BugReportApp/libs/{Android.bp => Android.bp.disabled}       | 0
+ tests/BugReportApp/tests/{Android.bp => Android.bp.disabled}      | 0
+ tests/CarDeveloperOptions/{Android.mk => Android.mk.disabled}     | 0
+ .../protos/{Android.bp => Android.bp.disabled}                    | 0
+ tests/CarLibTests/{Android.bp => Android.bp.disabled}             | 0
+ .../CarSecurityPermissionTest/{Android.bp => Android.bp.disabled} | 0
+ tests/OccupantAwareness/{Android.bp => Android.bp.disabled}       | 0
+ tests/SecondaryHomeApp/{Android.bp => Android.bp.disabled}        | 0
+ tests/ThemePlayground/{Android.bp => Android.bp.disabled}         | 0
+ tests/UserSwitchMonitorApp/{Android.bp => Android.bp.disabled}    | 0
+ 12 files changed, 0 insertions(+), 0 deletions(-)
+ rename packages/CarActivityResolver/{Android.bp => Android.bp.disabled} (100%)
+ rename tests/BugReportApp/{Android.bp => Android.bp.disabled} (100%)
+ rename tests/BugReportApp/libs/{Android.bp => Android.bp.disabled} (100%)
+ rename tests/BugReportApp/tests/{Android.bp => Android.bp.disabled} (100%)
+ rename tests/CarDeveloperOptions/{Android.mk => Android.mk.disabled} (100%)
+ rename tests/CarDeveloperOptions/protos/{Android.bp => Android.bp.disabled} (100%)
+ rename tests/CarLibTests/{Android.bp => Android.bp.disabled} (100%)
+ rename tests/CarSecurityPermissionTest/{Android.bp => Android.bp.disabled} (100%)
+ rename tests/OccupantAwareness/{Android.bp => Android.bp.disabled} (100%)
+ rename tests/SecondaryHomeApp/{Android.bp => Android.bp.disabled} (100%)
+ rename tests/ThemePlayground/{Android.bp => Android.bp.disabled} (100%)
+ rename tests/UserSwitchMonitorApp/{Android.bp => Android.bp.disabled} (100%)
+
+diff --git a/packages/CarActivityResolver/Android.bp b/packages/CarActivityResolver/Android.bp.disabled
+similarity index 100%
+rename from packages/CarActivityResolver/Android.bp
+rename to packages/CarActivityResolver/Android.bp.disabled
+diff --git a/tests/BugReportApp/Android.bp b/tests/BugReportApp/Android.bp.disabled
+similarity index 100%
+rename from tests/BugReportApp/Android.bp
+rename to tests/BugReportApp/Android.bp.disabled
+diff --git a/tests/BugReportApp/libs/Android.bp b/tests/BugReportApp/libs/Android.bp.disabled
+similarity index 100%
+rename from tests/BugReportApp/libs/Android.bp
+rename to tests/BugReportApp/libs/Android.bp.disabled
+diff --git a/tests/BugReportApp/tests/Android.bp b/tests/BugReportApp/tests/Android.bp.disabled
+similarity index 100%
+rename from tests/BugReportApp/tests/Android.bp
+rename to tests/BugReportApp/tests/Android.bp.disabled
+diff --git a/tests/CarDeveloperOptions/Android.mk b/tests/CarDeveloperOptions/Android.mk.disabled
+similarity index 100%
+rename from tests/CarDeveloperOptions/Android.mk
+rename to tests/CarDeveloperOptions/Android.mk.disabled
+diff --git a/tests/CarDeveloperOptions/protos/Android.bp b/tests/CarDeveloperOptions/protos/Android.bp.disabled
+similarity index 100%
+rename from tests/CarDeveloperOptions/protos/Android.bp
+rename to tests/CarDeveloperOptions/protos/Android.bp.disabled
+diff --git a/tests/CarLibTests/Android.bp b/tests/CarLibTests/Android.bp.disabled
+similarity index 100%
+rename from tests/CarLibTests/Android.bp
+rename to tests/CarLibTests/Android.bp.disabled
+diff --git a/tests/CarSecurityPermissionTest/Android.bp b/tests/CarSecurityPermissionTest/Android.bp.disabled
+similarity index 100%
+rename from tests/CarSecurityPermissionTest/Android.bp
+rename to tests/CarSecurityPermissionTest/Android.bp.disabled
+diff --git a/tests/OccupantAwareness/Android.bp b/tests/OccupantAwareness/Android.bp.disabled
+similarity index 100%
+rename from tests/OccupantAwareness/Android.bp
+rename to tests/OccupantAwareness/Android.bp.disabled
+diff --git a/tests/SecondaryHomeApp/Android.bp b/tests/SecondaryHomeApp/Android.bp.disabled
+similarity index 100%
+rename from tests/SecondaryHomeApp/Android.bp
+rename to tests/SecondaryHomeApp/Android.bp.disabled
+diff --git a/tests/ThemePlayground/Android.bp b/tests/ThemePlayground/Android.bp.disabled
+similarity index 100%
+rename from tests/ThemePlayground/Android.bp
+rename to tests/ThemePlayground/Android.bp.disabled
+diff --git a/tests/UserSwitchMonitorApp/Android.bp b/tests/UserSwitchMonitorApp/Android.bp.disabled
+similarity index 100%
+rename from tests/UserSwitchMonitorApp/Android.bp
+rename to tests/UserSwitchMonitorApp/Android.bp.disabled
+-- 
+2.34.1
+

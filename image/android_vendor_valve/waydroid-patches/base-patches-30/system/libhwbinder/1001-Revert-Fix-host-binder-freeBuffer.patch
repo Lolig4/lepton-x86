@@ -1,0 +1,87 @@
+From 9583ab120d30867aeadf6fafecaaea7af1b39126 Mon Sep 17 00:00:00 2001
+From: Franz-Josef Haider <frajo@frajo.fi>
+Date: Tue, 30 Jun 2026 20:19:26 +0300
+Subject: [PATCH 1/7] Revert "Fix host binder freeBuffer"
+
+This reverts commit e0587a419951599ca30e6d51e95b6c8142d819e6.
+---
+ IPCThreadState.cpp        | 8 ++++----
+ Parcel.cpp                | 3 +--
+ include/hwbinder/Parcel.h | 2 +-
+ 3 files changed, 6 insertions(+), 7 deletions(-)
+
+diff --git a/IPCThreadState.cpp b/IPCThreadState.cpp
+index 5715199..4068299 100644
+--- a/IPCThreadState.cpp
++++ b/IPCThreadState.cpp
+@@ -924,21 +924,21 @@ status_t IPCThreadState::waitForResponse(Parcel *reply, status_t *acquireResult)
+                             tr.data_size,
+                             reinterpret_cast<const binder_size_t*>(tr.data.ptr.offsets),
+                             tr.offsets_size/sizeof(binder_size_t),
+-                            freeBuffer, this, mIsHost);
++                            freeBuffer, this);
+                     } else {
+                         err = *reinterpret_cast<const status_t*>(tr.data.ptr.buffer);
+                         freeBuffer(nullptr,
+                             reinterpret_cast<const uint8_t*>(tr.data.ptr.buffer),
+                             tr.data_size,
+                             reinterpret_cast<const binder_size_t*>(tr.data.ptr.offsets),
+-                            tr.offsets_size/sizeof(binder_size_t), this, mIsHost);
++                            tr.offsets_size/sizeof(binder_size_t), this);
+                     }
+                 } else {
+                     freeBuffer(nullptr,
+                         reinterpret_cast<const uint8_t*>(tr.data.ptr.buffer),
+                         tr.data_size,
+                         reinterpret_cast<const binder_size_t*>(tr.data.ptr.offsets),
+-                        tr.offsets_size/sizeof(binder_size_t), this, mIsHost);
++                        tr.offsets_size/sizeof(binder_size_t), this);
+                     continue;
+                 }
+             }
+@@ -1224,7 +1224,7 @@ status_t IPCThreadState::executeCommand(int32_t cmd)
+                 reinterpret_cast<const uint8_t*>(tr.data.ptr.buffer),
+                 tr.data_size,
+                 reinterpret_cast<const binder_size_t*>(tr.data.ptr.offsets),
+-                tr.offsets_size/sizeof(binder_size_t), freeBuffer, this, mIsHost);
++                tr.offsets_size/sizeof(binder_size_t), freeBuffer, this);
+ 
+             const void* origServingStackPointer = mServingStackPointer;
+             mServingStackPointer = &origServingStackPointer; // anything on the stack
+diff --git a/Parcel.cpp b/Parcel.cpp
+index 758a76e..1a2f3be 100644
+--- a/Parcel.cpp
++++ b/Parcel.cpp
+@@ -1634,7 +1634,7 @@ size_t Parcel::ipcBufferSize() const
+ }
+ 
+ void Parcel::ipcSetDataReference(const uint8_t* data, size_t dataSize,
+-    const binder_size_t* objects, size_t objectsCount, release_func relFunc, void* relCookie, bool isHost)
++    const binder_size_t* objects, size_t objectsCount, release_func relFunc, void* relCookie)
+ {
+     binder_size_t minOffset = 0;
+     freeDataNoInit();
+@@ -1650,7 +1650,6 @@ void Parcel::ipcSetDataReference(const uint8_t* data, size_t dataSize,
+     clearCache();
+     mOwner = relFunc;
+     mOwnerCookie = relCookie;
+-    mIsHost = isHost;
+     for (size_t i = 0; i < mObjectsSize; i++) {
+         binder_size_t offset = mObjects[i];
+         if (offset < minOffset) {
+diff --git a/include/hwbinder/Parcel.h b/include/hwbinder/Parcel.h
+index 63cb687..fc2bbe2 100644
+--- a/include/hwbinder/Parcel.h
++++ b/include/hwbinder/Parcel.h
+@@ -250,7 +250,7 @@ private:
+     size_t              ipcBufferSize() const;
+     void                ipcSetDataReference(const uint8_t* data, size_t dataSize,
+                                             const binder_size_t* objects, size_t objectsCount,
+-                                            release_func relFunc, void* relCookie, bool isHost=false);
++                                            release_func relFunc, void* relCookie);
+ 
+ public:
+     void                print(TextOutput& to, uint32_t flags = 0) const;
+-- 
+2.54.0
+

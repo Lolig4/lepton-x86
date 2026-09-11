@@ -1,0 +1,41 @@
+From bea01eafe3a7c6ab44215d2505ba030dc2a0dbf2 Mon Sep 17 00:00:00 2001
+From: Franz-Josef Haider <frajo@frajo.fi>
+Date: Thu, 25 Jun 2026 23:21:50 +0300
+Subject: [PATCH 19/19] lepton: Disable check for aidl allocator.
+
+Change-Id: I1865d54292fa7ff2480b2030ecec6cb96f74e833
+---
+ libs/ui/Gralloc5.cpp | 5 ++++-
+ 1 file changed, 4 insertions(+), 1 deletion(-)
+
+diff --git a/libs/ui/Gralloc5.cpp b/libs/ui/Gralloc5.cpp
+index 11064ae7fc..45ba36e44e 100644
+--- a/libs/ui/Gralloc5.cpp
++++ b/libs/ui/Gralloc5.cpp
+@@ -53,6 +53,7 @@ struct Gralloc5 {
+ };
+ 
+ static std::shared_ptr<IAllocator> waitForAllocator() {
++#if 0
+     if (__builtin_available(android 31, *)) {
+         if (!AServiceManager_isDeclared(kIAllocatorServiceName.c_str())) {
+             return nullptr;
+@@ -77,6 +78,8 @@ static std::shared_ptr<IAllocator> waitForAllocator() {
+         // TODO: LOG_ALWAYS_FATAL("libui is not backwards compatible");
+         return nullptr;
+     }
++#endif
++    return nullptr;
+ }
+ 
+ static void *loadIMapperLibrary() {
+@@ -1027,4 +1030,4 @@ status_t Gralloc5Mapper::setSmpte2094_10(buffer_handle_t bufferHandle,
+                                                                    smpte2094_10);
+ }
+ 
+-} // namespace android
+\ No newline at end of file
++} // namespace android
+-- 
+2.55.0
+

@@ -1,0 +1,34 @@
+From 395822031a52a21517ba16d8a4db39eab526b409 Mon Sep 17 00:00:00 2001
+From: Elliot Saba <sabae@valvesoftware.com>
+Date: Thu, 19 Dec 2024 16:02:57 -0800
+Subject: [PATCH] lepton: disable USB access for `adbd`
+
+This prevents a host `adbd` from conflicting with the container's
+`adbd`, which we always connect to over TCP.
+
+Change-Id: I64a4e424309abb8ca4de0c675343bd57a537e826
+---
+ adb/daemon/main.cpp | 2 ++
+ 1 file changed, 2 insertions(+)
+
+diff --git a/adb/daemon/main.cpp b/adb/daemon/main.cpp
+index e045bdcff..ad63c9009 100644
+--- a/adb/daemon/main.cpp
++++ b/adb/daemon/main.cpp
+@@ -250,11 +250,13 @@ int adbd_main(int server_port) {
+     bool is_usb = false;
+ 
+ #if defined(__ANDROID__)
++    /*
+     if (access(USB_FFS_ADB_EP0, F_OK) == 0) {
+         // Listen on USB.
+         usb_init();
+         is_usb = true;
+     }
++    */
+ #endif
+ 
+     // If one of these properties is set, also listen on that port.
+-- 
+2.34.1
+

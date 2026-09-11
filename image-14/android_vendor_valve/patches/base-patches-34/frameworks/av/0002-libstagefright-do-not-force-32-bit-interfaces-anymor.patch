@@ -1,0 +1,124 @@
+From e028d3b447f49501949598045382a38f54a0730d Mon Sep 17 00:00:00 2001
+From: Elliot Saba <sabae@valvesoftware.com>
+Date: Wed, 15 Jan 2025 14:28:23 -0800
+Subject: [PATCH 2/2] libstagefright: do not force 32-bit interfaces anymore
+
+Change-Id: Ie42f27382e6f2add5ee5034f15ddaa9fad83194b
+---
+ media/codec2/sfplugin/C2OMXNode.cpp                   | 4 ----
+ media/codec2/sfplugin/Omx2IGraphicBufferSource.cpp    | 4 ----
+ media/libstagefright/ACodec.cpp                       | 4 ----
+ media/libstagefright/OMXClient.cpp                    | 4 ----
+ media/libstagefright/OmxInfoBuilder.cpp               | 4 ----
+ media/libstagefright/omx/1.0/WGraphicBufferSource.cpp | 4 ----
+ media/libstagefright/omx/OmxGraphicBufferSource.cpp   | 4 ----
+ 7 files changed, 28 deletions(-)
+
+diff --git a/media/codec2/sfplugin/C2OMXNode.cpp b/media/codec2/sfplugin/C2OMXNode.cpp
+index bba022b4ac..d593ae2569 100644
+--- a/media/codec2/sfplugin/C2OMXNode.cpp
++++ b/media/codec2/sfplugin/C2OMXNode.cpp
+@@ -14,10 +14,6 @@
+  * limitations under the License.
+  */
+ 
+-#ifdef __LP64__
+-#define OMX_ANDROID_COMPILE_AS_32BIT_ON_64BIT_PLATFORMS
+-#endif
+-
+ //#define LOG_NDEBUG 0
+ #define LOG_TAG "C2OMXNode"
+ #include <log/log.h>
+diff --git a/media/codec2/sfplugin/Omx2IGraphicBufferSource.cpp b/media/codec2/sfplugin/Omx2IGraphicBufferSource.cpp
+index 764fa001ec..e3a9259e90 100644
+--- a/media/codec2/sfplugin/Omx2IGraphicBufferSource.cpp
++++ b/media/codec2/sfplugin/Omx2IGraphicBufferSource.cpp
+@@ -14,10 +14,6 @@
+  * limitations under the License.
+  */
+ 
+-#ifdef __LP64__
+-#define OMX_ANDROID_COMPILE_AS_32BIT_ON_64BIT_PLATFORMS
+-#endif
+-
+ //#define LOG_NDEBUG 0
+ #define LOG_TAG "Omx2IGraphicBufferSource"
+ #include <android-base/logging.h>
+diff --git a/media/libstagefright/ACodec.cpp b/media/libstagefright/ACodec.cpp
+index f9ceef24e2..fd0b032dca 100644
+--- a/media/libstagefright/ACodec.cpp
++++ b/media/libstagefright/ACodec.cpp
+@@ -17,10 +17,6 @@
+ //#define LOG_NDEBUG 0
+ #define LOG_TAG "ACodec"
+ 
+-#ifdef __LP64__
+-#define OMX_ANDROID_COMPILE_AS_32BIT_ON_64BIT_PLATFORMS
+-#endif
+-
+ #include <inttypes.h>
+ #include <utils/Trace.h>
+ 
+diff --git a/media/libstagefright/OMXClient.cpp b/media/libstagefright/OMXClient.cpp
+index 9375de1266..aad5c53d69 100644
+--- a/media/libstagefright/OMXClient.cpp
++++ b/media/libstagefright/OMXClient.cpp
+@@ -17,10 +17,6 @@
+ //#define LOG_NDEBUG 0
+ #define LOG_TAG "OMXClient"
+ 
+-#ifdef __LP64__
+-#define OMX_ANDROID_COMPILE_AS_32BIT_ON_64BIT_PLATFORMS
+-#endif
+-
+ #include <utils/Log.h>
+ #include <cutils/properties.h>
+ 
+diff --git a/media/libstagefright/OmxInfoBuilder.cpp b/media/libstagefright/OmxInfoBuilder.cpp
+index 79ffdeb894..e455b21818 100644
+--- a/media/libstagefright/OmxInfoBuilder.cpp
++++ b/media/libstagefright/OmxInfoBuilder.cpp
+@@ -17,10 +17,6 @@
+ //#define LOG_NDEBUG 0
+ #define LOG_TAG "OmxInfoBuilder"
+ 
+-#ifdef __LP64__
+-#define OMX_ANDROID_COMPILE_AS_32BIT_ON_64BIT_PLATFORMS
+-#endif
+-
+ #include <android-base/properties.h>
+ #include <utils/Log.h>
+ 
+diff --git a/media/libstagefright/omx/1.0/WGraphicBufferSource.cpp b/media/libstagefright/omx/1.0/WGraphicBufferSource.cpp
+index f4ccaba28d..cbb58a6f9f 100644
+--- a/media/libstagefright/omx/1.0/WGraphicBufferSource.cpp
++++ b/media/libstagefright/omx/1.0/WGraphicBufferSource.cpp
+@@ -14,10 +14,6 @@
+  * limitations under the License.
+  */
+ 
+-#ifdef __LP64__
+-#define OMX_ANDROID_COMPILE_AS_32BIT_ON_64BIT_PLATFORMS
+-#endif
+-
+ //#define LOG_NDEBUG 0
+ #define LOG_TAG "TWGraphicBufferSource"
+ 
+diff --git a/media/libstagefright/omx/OmxGraphicBufferSource.cpp b/media/libstagefright/omx/OmxGraphicBufferSource.cpp
+index 5d653bc8c4..2a49b5ce3d 100644
+--- a/media/libstagefright/omx/OmxGraphicBufferSource.cpp
++++ b/media/libstagefright/omx/OmxGraphicBufferSource.cpp
+@@ -14,10 +14,6 @@
+  * limitations under the License.
+  */
+ 
+-#ifdef __LP64__
+-#define OMX_ANDROID_COMPILE_AS_32BIT_ON_64BIT_PLATFORMS
+-#endif
+-
+ #include <inttypes.h>
+ 
+ #define LOG_TAG "OmxGraphicBufferSource"
+-- 
+2.55.0
+

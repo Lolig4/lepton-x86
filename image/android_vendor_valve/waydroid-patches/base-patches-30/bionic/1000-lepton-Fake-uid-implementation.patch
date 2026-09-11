@@ -1,0 +1,421 @@
+From 097772d29a34222159ba3ec7d6c8f3257ffaeca4 Mon Sep 17 00:00:00 2001
+From: Franz-Josef Haider <frajo@frajo.fi>
+Date: Mon, 29 Dec 2025 15:14:32 +0200
+Subject: [PATCH 1/1] lepton: Fake uid implementation.
+
+This implements a fake uid, which is used by android to determine for example
+which app is doing what. We only run one app per container so we run everything
+as the same user and with using the linux uids/gids this would result in android
+getting very confused. We need to be able to pass the uids/gids between execve
+invocations, therefore the environment variables.
+
+Change-Id: Ie9121f046ad5f3744aa85581122a59ba63072b1d
+---
+ libc/Android.bp                 |   2 +
+ libc/SECCOMP_BLACKLIST_APP.TXT  |  24 ++--
+ libc/SYSCALLS.TXT               |  58 +++++-----
+ libc/bionic/fake_uid.cpp        | 194 ++++++++++++++++++++++++++++++++
+ libc/seccomp/seccomp_policy.cpp |  16 +--
+ 5 files changed, 245 insertions(+), 49 deletions(-)
+ create mode 100644 libc/bionic/fake_uid.cpp
+
+diff --git a/libc/Android.bp b/libc/Android.bp
+index ce714054a..4741212ee 100644
+--- a/libc/Android.bp
++++ b/libc/Android.bp
+@@ -1183,6 +1183,8 @@ cc_library_static {
+         // This contains a weak stub implementation of __find_icu_symbol for wctype.cpp,
+         // which will be overridden by the actual one in libc.so.
+         "bionic/icu_static.cpp",
++
++        "bionic/fake_uid.cpp",
+     ],
+ 
+     multilib: {
+diff --git a/libc/SECCOMP_BLACKLIST_APP.TXT b/libc/SECCOMP_BLACKLIST_APP.TXT
+index 40ca22275..37e322f18 100644
+--- a/libc/SECCOMP_BLACKLIST_APP.TXT
++++ b/libc/SECCOMP_BLACKLIST_APP.TXT
+@@ -11,21 +11,21 @@
+ # the process still has CAP_SYS_ADMIN; changing the uid would remove that capability.
+ 
+ # syscalls to modify IDs
+-int     setgid:setgid32(gid_t)     lp32
+-int     setgid:setgid(gid_t)       lp64
+-int     setuid:setuid32(uid_t)    lp32
+-int     setuid:setuid(uid_t)      lp64
+-int     setregid:setregid32(gid_t, gid_t)  lp32
+-int     setregid:setregid(gid_t, gid_t)    lp64
+-int     setreuid:setreuid32(uid_t, uid_t)   lp32
+-int     setreuid:setreuid(uid_t, uid_t)     lp64
+-int     setresgid:setresgid32(gid_t, gid_t, gid_t)   lp32
+-int     setresgid:setresgid(gid_t, gid_t, gid_t)     lp64
++int     setgid_sys:setgid32(gid_t)     lp32
++int     setgid_sys:setgid(gid_t)       lp64
++int     setuid_sys:setuid32(uid_t)    lp32
++int     setuid_sys:setuid(uid_t)      lp64
++int     setregid_sys:setregid32(gid_t, gid_t)  lp32
++int     setregid_sys:setregid(gid_t, gid_t)    lp64
++int     setreuid_sys:setreuid32(uid_t, uid_t)   lp32
++int     setreuid_sys:setreuid(uid_t, uid_t)     lp64
++int     setresgid_sys:setresgid32(gid_t, gid_t, gid_t)   lp32
++int     setresgid_sys:setresgid(gid_t, gid_t, gid_t)     lp64
+ # setresuid is explicitly allowed, see above.
+ int     setfsgid(gid_t)  all
+ int     setfsuid(uid_t)  all
+-int     setgroups:setgroups32(int, const gid_t*)   lp32
+-int     setgroups:setgroups(int, const gid_t*)     lp64
++int     setgroups_sys:setgroups32(int, const gid_t*)   lp32
++int     setgroups_sys:setgroups(int, const gid_t*)     lp64
+ 
+ # syscalls to modify times
+ int     adjtimex(struct timex*)   all
+diff --git a/libc/SYSCALLS.TXT b/libc/SYSCALLS.TXT
+index 6d8b4b64e..9ac3cfe88 100644
+--- a/libc/SYSCALLS.TXT
++++ b/libc/SYSCALLS.TXT
+@@ -28,18 +28,18 @@
+ 
+ int     execve(const char*, char* const*, char* const*)  all
+ 
+-uid_t   getuid:getuid32()         lp32
+-uid_t   getuid:getuid()           lp64
+-gid_t   getgid:getgid32()         lp32
+-gid_t   getgid:getgid()           lp64
+-uid_t   geteuid:geteuid32()       lp32
+-uid_t   geteuid:geteuid()         lp64
+-gid_t   getegid:getegid32()       lp32
+-gid_t   getegid:getegid()         lp64
+-uid_t   getresuid:getresuid32(uid_t* ruid, uid_t* euid, uid_t* suid)   lp32
+-uid_t   getresuid:getresuid(uid_t* ruid, uid_t* euid, uid_t* suid)     lp64
+-gid_t   getresgid:getresgid32(gid_t* rgid, gid_t* egid, gid_t* sgid)   lp32
+-gid_t   getresgid:getresgid(gid_t* rgid, gid_t* egid, gid_t* sgid)     lp64
++uid_t   getuid_sys:getuid32()         lp32
++uid_t   getuid_sys:getuid()           lp64
++gid_t   getgid_sys:getgid32()         lp32
++gid_t   getgid_sys:getgid()           lp64
++uid_t   geteuid_sys:geteuid32()       lp32
++uid_t   geteuid_sys:geteuid()         lp64
++gid_t   getegid_sys:getegid32()       lp32
++gid_t   getegid_sys:getegid()         lp64
++uid_t   getresuid_sys:getresuid32(uid_t* ruid, uid_t* euid, uid_t* suid)   lp32
++uid_t   getresuid_sys:getresuid(uid_t* ruid, uid_t* euid, uid_t* suid)     lp64
++gid_t   getresgid_sys:getresgid32(gid_t* rgid, gid_t* egid, gid_t* sgid)   lp32
++gid_t   getresgid_sys:getresgid(gid_t* rgid, gid_t* egid, gid_t* sgid)     lp64
+ ssize_t readahead(int, off64_t, size_t)     all
+ int     getgroups:getgroups32(int, gid_t*)    lp32
+ int     getgroups:getgroups(int, gid_t*)      lp64
+@@ -47,16 +47,16 @@ pid_t   getpgid(pid_t)             all
+ pid_t   getppid()                  all
+ pid_t   getsid(pid_t)              all
+ pid_t   setsid()                   all
+-int     setgid:setgid32(gid_t)     lp32
+-int     setgid:setgid(gid_t)       lp64
+-int     setuid:setuid32(uid_t)    lp32
+-int     setuid:setuid(uid_t)      lp64
+-int     setreuid:setreuid32(uid_t, uid_t)   lp32
+-int     setreuid:setreuid(uid_t, uid_t)     lp64
+-int     setresuid:setresuid32(uid_t, uid_t, uid_t)   lp32
+-int     setresuid:setresuid(uid_t, uid_t, uid_t)     lp64
+-int     setresgid:setresgid32(gid_t, gid_t, gid_t)   lp32
+-int     setresgid:setresgid(gid_t, gid_t, gid_t)     lp64
++int     setgid_sys:setgid32(gid_t)     lp32
++int     setgid_sys:setgid(gid_t)       lp64
++int     setuid_sys:setuid32(uid_t)    lp32
++int     setuid_sys:setuid(uid_t)      lp64
++int     setreuid_sys:setreuid32(uid_t, uid_t)   lp32
++int     setreuid_sys:setreuid(uid_t, uid_t)     lp64
++int     setresuid_sys:setresuid32(uid_t, uid_t, uid_t)   lp32
++int     setresuid_sys:setresuid(uid_t, uid_t, uid_t)     lp64
++int     setresgid_sys:setresgid32(gid_t, gid_t, gid_t)   lp32
++int     setresgid_sys:setresgid(gid_t, gid_t, gid_t)     lp64
+ void*   __brk:brk(void*)           all
+ int     kill(pid_t, int)           all
+ int     tgkill(pid_t tgid, pid_t tid, int sig)  all
+@@ -75,11 +75,11 @@ int setrlimit|setrlimit64(int, const struct rlimit*)  lp64
+ int prlimit64|prlimit(pid_t, int, struct rlimit64*, const struct rlimit64*)  lp64
+ int prlimit64(pid_t, int, struct rlimit64*, const struct rlimit64*)  lp32
+ 
+-int     setgroups:setgroups32(int, const gid_t*)   lp32
+-int     setgroups:setgroups(int, const gid_t*)     lp64
++int     setgroups_sys:setgroups32(int, const gid_t*)   lp32
++int     setgroups_sys:setgroups(int, const gid_t*)     lp64
+ int     setpgid(pid_t, pid_t)  all
+-int     setregid:setregid32(gid_t, gid_t)  lp32
+-int     setregid:setregid(gid_t, gid_t)    lp64
++int     setregid_sys:setregid32(gid_t, gid_t)  lp32
++int     setregid_sys:setregid(gid_t, gid_t)    lp64
+ int     chroot(const char*)  all
+ int     prctl(int, unsigned long, unsigned long, unsigned long, unsigned long) all
+ long    __arch_prctl:arch_prctl(int, unsigned long) x86_64
+@@ -131,8 +131,8 @@ int         __dup:dup(int)  all
+ int         __dup3:dup3(int, int, int)   all
+ int         fsync(int)  all
+ int         fdatasync(int) all
+-int         fchown:fchown32(int, uid_t, gid_t)  lp32
+-int         fchown:fchown(int, uid_t, gid_t)    lp64
++int         fchown_sys:fchown32(int, uid_t, gid_t)  lp32
++int         fchown_sys:fchown(int, uid_t, gid_t)    lp64
+ void        sync(void)  all
+ int         syncfs(int)  all
+ int         __fsetxattr:fsetxattr(int, const char*, const void*, size_t, int) all
+@@ -145,7 +145,7 @@ int __getdents64:getdents64(unsigned int, struct dirent*, unsigned int)   all
+ int __openat:openat(int, const char*, int, mode_t) all
+ int __faccessat:faccessat(int, const char*, int)  all
+ int __fchmodat:fchmodat(int, const char*, mode_t)  all
+-int fchownat(int, const char*, uid_t, gid_t, int)  all
++int fchownat_sys:fchownat(int, const char*, uid_t, gid_t, int)  all
+ int fstatat64|fstatat:fstatat64(int, const char*, struct stat*, int)   lp32
+ int fstatat64|fstatat:newfstatat(int, const char*, struct stat*, int)  arm64,x86_64
+ int linkat(int, const char*, int, const char*, int)  all
+diff --git a/libc/bionic/fake_uid.cpp b/libc/bionic/fake_uid.cpp
+new file mode 100644
+index 000000000..a591bffa0
+--- /dev/null
++++ b/libc/bionic/fake_uid.cpp
+@@ -0,0 +1,194 @@
++/*
++ * Redistribution and use in source and binary forms, with or without
++ * modification, are permitted provided that the following conditions
++ * are met:
++ *  * Redistributions of source code must retain the above copyright
++ *    notice, this list of conditions and the following disclaimer.
++ *  * Redistributions in binary form must reproduce the above copyright
++ *    notice, this list of conditions and the following disclaimer in
++ *    the documentation and/or other materials provided with the
++ *    distribution.
++ *
++ * THIS SOFTWARE IS PROVIDED BY THE COPYRIGHT HOLDERS AND CONTRIBUTORS
++ * "AS IS" AND ANY EXPRESS OR IMPLIED WARRANTIES, INCLUDING, BUT NOT
++ * LIMITED TO, THE IMPLIED WARRANTIES OF MERCHANTABILITY AND FITNESS
++ * FOR A PARTICULAR PURPOSE ARE DISCLAIMED. IN NO EVENT SHALL THE
++ * COPYRIGHT OWNER OR CONTRIBUTORS BE LIABLE FOR ANY DIRECT, INDIRECT,
++ * INCIDENTAL, SPECIAL, EXEMPLARY, OR CONSEQUENTIAL DAMAGES (INCLUDING,
++ * BUT NOT LIMITED TO, PROCUREMENT OF SUBSTITUTE GOODS OR SERVICES; LOSS
++ * OF USE, DATA, OR PROFITS; OR BUSINESS INTERRUPTION) HOWEVER CAUSED
++ * AND ON ANY THEORY OF LIABILITY, WHETHER IN CONTRACT, STRICT LIABILITY,
++ * OR TORT (INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT
++ * OF THE USE OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF
++ * SUCH DAMAGE.
++ */
++
++#include <string.h>
++#include <stdlib.h>
++#include <unistd.h>
++#include <dlfcn.h>
++
++/**
++ * TODO: We should in theory block getuid and related calls via seccomp in
++ * order to catch the calls and return the fake uid. For now apps will get
++ * 0 when they perform the syscalls directly (as well as when they read from
++ * /proc/$PID/status).
++ */
++
++static uid_t s_uid = -1;
++static uid_t s_gid = -1;
++
++extern "C" uid_t getuid(void) __attribute__((visibility ("default")));
++uid_t
++getuid(void)
++{
++    if (s_uid == static_cast<uid_t>(-1)) {
++        char *parent_uid = getenv("PARENT_UID");
++        if (parent_uid) {
++            s_uid = atoi(parent_uid);
++        } else {
++            s_uid = 0;
++        }
++    }
++    return s_uid;
++}
++
++extern "C" gid_t getgid(void) __attribute__((visibility ("default")));
++gid_t
++getgid(void)
++{
++    if (s_gid == static_cast<gid_t>(-1)) {
++        char *parent_gid = getenv("PARENT_GID");
++        if (parent_gid) {
++            s_gid = atoi(parent_gid);
++        } else {
++            s_gid = 0;
++        }
++    }
++    return s_gid;
++}
++
++extern "C" int setuid(uid_t uid) __attribute__((visibility ("default")));
++int
++setuid(uid_t uid)
++{
++    // Don't allow apps changing their fake uid.
++    if (s_uid != static_cast<uid_t>(-1) && s_uid >= 10000) {
++        return -1;
++    }
++
++    char uidstr[64];
++    snprintf(uidstr, sizeof(uidstr), "%d", uid);
++    setenv("PARENT_UID", uidstr, 1);
++    s_uid = uid;
++    return 0;
++}
++
++extern "C" int setgid(gid_t gid) __attribute__((visibility ("default")));
++int
++setgid(gid_t gid)
++{
++    // Don't allow apps changing their fake gid.
++    if (s_gid != static_cast<gid_t>(-1) && s_gid >= 10000) {
++        return -1;
++    }
++
++    char gidstr[64];
++    snprintf(gidstr, sizeof(gidstr), "%d", gid);
++    setenv("PARENT_GID", gidstr, 1);
++    s_gid = gid;
++    return 0;
++}
++
++extern "C" int setgroups(size_t __size, const gid_t* __list) __attribute__((visibility ("default")));
++int
++setgroups(size_t __size, const gid_t* __list)
++{
++    (void)__size;
++    (void)__list;
++    return 0;
++}
++
++extern "C" int setreuid(uid_t ruid, uid_t euid) __attribute__((visibility ("default")));
++int
++setreuid(uid_t ruid, uid_t euid)
++{
++    (void)ruid;
++    return setuid(euid);
++
++}
++
++extern "C" int setregid(gid_t rgid, gid_t egid) __attribute__((visibility ("default")));
++int
++setregid(gid_t rgid, gid_t egid)
++{
++    (void)rgid;
++    return setgid(egid);
++}
++
++extern "C" int setresuid(uid_t ruid, uid_t euid, uid_t suid) __attribute__((visibility ("default")));
++int setresuid(uid_t ruid, uid_t euid, uid_t suid)
++{
++    (void)ruid;
++    (void)suid;
++    return setuid(euid);
++}
++
++extern "C" int setresgid(gid_t rgid, gid_t egid, gid_t sgid) __attribute__((visibility ("default")));
++int setresgid(gid_t rgid, gid_t egid, gid_t sgid)
++{
++    (void)rgid;
++    (void)sgid;
++    return setgid(egid);
++}
++
++extern "C" int fchown(int filedes, uid_t uid, gid_t gid) __attribute__((visibility ("default")));
++int fchown(int filedes, uid_t uid, gid_t gid)
++{
++    (void)filedes;
++    (void)uid;
++    (void)gid;
++    return 0;
++}
++
++extern "C" int fchownat(int filedes, const char *path, uid_t uid, gid_t gid, int flag) __attribute__((visibility ("default")));
++int fchownat(int filedes, const char *path, uid_t uid, gid_t gid, int flag)
++{
++    (void)filedes;
++    (void)path;
++    (void)uid;
++    (void)gid;
++    (void)flag;
++    return 0;
++}
++
++extern "C" uid_t geteuid(void) __attribute__((visibility ("default")));
++uid_t geteuid(void)
++{
++    return getuid();
++}
++
++extern "C" gid_t getegid(void) __attribute__((visibility ("default")));
++gid_t getegid(void)
++{
++    return getgid();
++}
++
++extern "C" int getresuid(uid_t* __ruid, uid_t* __euid, uid_t* __suid) __attribute__((visibility ("default")));
++int getresuid(uid_t* __ruid, uid_t* __euid, uid_t* __suid)
++{
++    *__ruid = getuid();
++    *__euid = *__ruid;
++    *__suid = *__ruid;
++    return 0;
++}
++
++extern "C" int getresgid(gid_t* __rgid, gid_t* __egid, gid_t* __sgid) __attribute__((visibility ("default")));
++int getresgid(gid_t* __rgid, gid_t* __egid, gid_t* __sgid)
++{
++    *__rgid = getgid();
++    *__egid = *__rgid;
++    *__sgid = *__rgid;
++    return 0;
++}
++
+diff --git a/libc/seccomp/seccomp_policy.cpp b/libc/seccomp/seccomp_policy.cpp
+index 65357fc3a..9df39a88b 100644
+--- a/libc/seccomp/seccomp_policy.cpp
++++ b/libc/seccomp/seccomp_policy.cpp
+@@ -40,8 +40,8 @@ static const size_t primary_app_zygote_filter_size = arm64_app_zygote_filter_siz
+ static const struct sock_filter* primary_system_filter = arm64_system_filter;
+ static const size_t primary_system_filter_size = arm64_system_filter_size;
+ 
+-static const long primary_setresgid = __arm64_setresgid;
+-static const long primary_setresuid = __arm64_setresuid;
++static const long primary_setresgid = __arm64_setresgid_sys;
++static const long primary_setresuid = __arm64_setresuid_sys;
+ #define SECONDARY_ARCH AUDIT_ARCH_ARM
+ static const struct sock_filter* secondary_app_filter = arm_app_filter;
+ static const size_t secondary_app_filter_size = arm_app_filter_size;
+@@ -50,8 +50,8 @@ static const size_t secondary_app_zygote_filter_size = arm_app_zygote_filter_siz
+ static const struct sock_filter* secondary_system_filter = arm_system_filter;
+ static const size_t secondary_system_filter_size = arm_system_filter_size;
+ 
+-static const long secondary_setresgid = __arm_setresgid;
+-static const long secondary_setresuid = __arm_setresuid;
++static const long secondary_setresgid = __arm_setresgid_sys;
++static const long secondary_setresuid = __arm_setresuid_sys;
+ #elif defined __i386__ || defined __x86_64__
+ 
+ #define DUAL_ARCH
+@@ -63,8 +63,8 @@ static const size_t primary_app_zygote_filter_size = x86_64_app_zygote_filter_si
+ static const struct sock_filter* primary_system_filter = x86_64_system_filter;
+ static const size_t primary_system_filter_size = x86_64_system_filter_size;
+ 
+-static const long primary_setresgid = __x86_64_setresgid;
+-static const long primary_setresuid = __x86_64_setresuid;
++static const long primary_setresgid = __x86_64_setresgid_sys;
++static const long primary_setresuid = __x86_64_setresuid_sys;
+ #define SECONDARY_ARCH AUDIT_ARCH_I386
+ static const struct sock_filter* secondary_app_filter = x86_app_filter;
+ static const size_t secondary_app_filter_size = x86_app_filter_size;
+@@ -73,8 +73,8 @@ static const size_t secondary_app_zygote_filter_size = x86_app_zygote_filter_siz
+ static const struct sock_filter* secondary_system_filter = x86_system_filter;
+ static const size_t secondary_system_filter_size = x86_system_filter_size;
+ 
+-static const long secondary_setresgid = __x86_setresgid;
+-static const long secondary_setresuid = __x86_setresuid;
++static const long secondary_setresgid = __x86_setresgid_sys;
++static const long secondary_setresuid = __x86_setresuid_sys;
+ #else
+ #error No architecture was defined!
+ #endif
+-- 
+2.52.0
+

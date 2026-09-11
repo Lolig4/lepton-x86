@@ -1,0 +1,77 @@
+From 05862a6d359eaa3ee5bcc7172d45aee861f1ece8 Mon Sep 17 00:00:00 2001
+From: Franz-Josef Haider <frajo@frajo.fi>
+Date: Mon, 22 Jun 2026 19:43:46 +0300
+Subject: [PATCH 15/21] lepton: Disable fstab parsing.
+
+Change-Id: Ic9bb44f6e239e3e269946668c9478808a9d06e4e
+---
+ fs_mgr/libfstab/fstab.cpp    | 12 ++++++++++--
+ init/block_dev_initializer.h |  2 +-
+ 2 files changed, 11 insertions(+), 3 deletions(-)
+
+diff --git a/fs_mgr/libfstab/fstab.cpp b/fs_mgr/libfstab/fstab.cpp
+index 6fa22fee53..fdc9b14bb6 100644
+--- a/fs_mgr/libfstab/fstab.cpp
++++ b/fs_mgr/libfstab/fstab.cpp
+@@ -751,13 +751,17 @@ bool ReadFstabFromProcMounts(Fstab* fstab) {
+ 
+ // Returns fstab entries parsed from the device tree if they exist
+ bool ReadFstabFromDt(Fstab* fstab, bool verbose) {
++    (void)ReadFstabFromDt();
++    (void)verbose;
++    fstab->clear();
++    /*
+     std::string fstab_buf = ReadFstabFromDt();
+     if (fstab_buf.empty()) {
+         if (verbose) LINFO << __FUNCTION__ << "(): failed to read fstab from dt";
+         return false;
+     }
+ 
+-    if (!ParseFstabFromString(fstab_buf, /* proc_mounts = */ false, fstab)) {
++    if (!ParseFstabFromString(fstab_buf, false, fstab)) {
+         if (verbose) {
+             LERROR << __FUNCTION__ << "(): failed to load fstab from kernel:" << std::endl
+                    << fstab_buf;
+@@ -766,6 +770,7 @@ bool ReadFstabFromDt(Fstab* fstab, bool verbose) {
+     }
+ 
+     SkipMountingPartitions(fstab, verbose);
++    */
+ 
+     return true;
+ }
+@@ -830,7 +835,9 @@ bool SkipMountWithConfig(const std::string& skip_mount_config, Fstab* fstab, boo
+ // Loads the fstab file and combines with fstab entries passed in from device tree.
+ bool ReadDefaultFstab(Fstab* fstab) {
+     fstab->clear();
+-    ReadFstabFromDt(fstab, false /* verbose */);
++    return true;
++/*
++    ReadFstabFromDt(fstab, false);
+ 
+     Fstab default_fstab;
+     const std::string default_fstab_path = GetFstabPath();
+@@ -842,6 +849,7 @@ bool ReadDefaultFstab(Fstab* fstab) {
+     }
+ 
+     return !fstab->empty();
++*/
+ }
+ 
+ std::vector<FstabEntry*> GetEntriesForMountPoint(Fstab* fstab, const std::string& path) {
+diff --git a/init/block_dev_initializer.h b/init/block_dev_initializer.h
+index ec39ce084d..45c3e06553 100644
+--- a/init/block_dev_initializer.h
++++ b/init/block_dev_initializer.h
+@@ -39,7 +39,7 @@ class BlockDevInitializer final {
+     bool InitMiscDevice(const std::string& name);
+ 
+     std::unique_ptr<DeviceHandler> device_handler_;
+-    UeventListener uevent_listener_;
++    //UeventListener uevent_listener_;
+ };
+ 
+ }  // namespace init
+-- 
+2.55.0
+

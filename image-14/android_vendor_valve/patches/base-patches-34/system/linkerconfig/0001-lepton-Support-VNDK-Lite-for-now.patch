@@ -1,0 +1,31 @@
+From 3572318191c0452d78f421512662f1739f8c250a Mon Sep 17 00:00:00 2001
+From: Franz-Josef Haider <frajo@frajo.fi>
+Date: Tue, 26 May 2026 11:29:15 +0300
+Subject: [PATCH] lepton: Support VNDK-Lite for now.
+
+Change-Id: I9c8467fbd198846819274f72e6b00b44d38609ae
+---
+ main.cc | 2 ++
+ 1 file changed, 2 insertions(+)
+
+diff --git a/main.cc b/main.cc
+index 9287471..0f46807 100644
+--- a/main.cc
++++ b/main.cc
+@@ -404,11 +404,13 @@ int main(int argc, char* argv[]) {
+     PrintUsage(EXIT_FAILURE);
+   }
+ 
++  /*
+   if (android::linkerconfig::modules::IsTreblelizedDevice() &&
+       android::linkerconfig::modules::IsVndkLiteDevice()) {
+     LOG(ERROR) << "Linkerconfig no longer supports VNDK-Lite configuration";
+     exit(EXIT_FAILURE);
+   }
++  */
+ 
+   LoadVariables(args);
+   Context ctx = GetContext(args);
+-- 
+2.55.0
+

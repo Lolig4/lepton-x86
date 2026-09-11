@@ -1,0 +1,108 @@
+From fe6d949c9bd87de1d037d2787ddb05fcba6969fe Mon Sep 17 00:00:00 2001
+From: Franz-Josef Haider <frajo@frajo.fi>
+Date: Thu, 25 Jun 2026 23:00:42 +0300
+Subject: [PATCH 18/21] Revert "No need to read ro.apex.updatable now"
+
+This reverts commit 918971c69ea76c5638dd0e9c7334b69d7d628f03.
+
+Change-Id: Iceceda1b2e1af4348954e8e38f89daf986396569
+---
+ init/Android.bp          |  1 +
+ init/mount_namespace.cpp | 19 ++++++++++++++++++-
+ init/service.cpp         |  3 ++-
+ 3 files changed, 21 insertions(+), 2 deletions(-)
+
+diff --git a/init/Android.bp b/init/Android.bp
+index 78b604c4fc..e54d269a2a 100644
+--- a/init/Android.bp
++++ b/init/Android.bp
+@@ -222,6 +222,7 @@ cc_defaults {
+     ],
+     whole_static_libs: [
+         "libcap",
++        "libcom.android.sysprop.apex",
+         "libcom.android.sysprop.init",
+     ],
+     header_libs: ["bootimg_headers"],
+diff --git a/init/mount_namespace.cpp b/init/mount_namespace.cpp
+index 7918f23e9e..34ca03eb5c 100644
+--- a/init/mount_namespace.cpp
++++ b/init/mount_namespace.cpp
+@@ -21,6 +21,7 @@
+ #include <string>
+ #include <vector>
+ 
++#include <ApexProperties.sysprop.h>
+ #include <android-base/file.h>
+ #include <android-base/logging.h>
+ #include <android-base/properties.h>
+@@ -29,6 +30,16 @@
+ 
+ #include "util.h"
+ 
++#ifndef RECOVERY
++#define ACTIVATE_FLATTENED_APEX 1
++#endif
++
++#ifdef ACTIVATE_FLATTENED_APEX
++#include <apex_manifest.pb.h>
++#include <com_android_apex.h>
++#include <selinux/android.h>
++#endif  // ACTIVATE_FLATTENED_APEX
++
+ namespace android {
+ namespace init {
+ namespace {
+@@ -66,6 +77,11 @@ static std::string GetMountNamespaceId() {
+     return ret;
+ }
+ 
++static bool IsApexUpdatable() {
++    static bool updatable = android::sysprop::ApexProperties::updatable().value_or(false);
++    return updatable;
++}
++
+ static android::base::unique_fd bootstrap_ns_fd;
+ static android::base::unique_fd default_ns_fd;
+ 
+@@ -77,6 +93,7 @@ static std::string default_ns_id;
+ // In case we have two sets of APEXes (non-updatable, updatable), we need two separate mount
+ // namespaces.
+ bool NeedsTwoMountNamespaces() {
++    if (!IsApexUpdatable()) return false;
+     if (IsRecoveryMode()) return false;
+     // In microdroid, there's only one set of APEXes in built-in directories include block devices.
+     if (IsMicrodroid()) return false;
+@@ -193,7 +210,7 @@ bool SetupMountNamespaces() {
+ // Switch the mount namespace of the current process from bootstrap to default OR from default to
+ // bootstrap. If the current mount namespace is neither bootstrap nor default, keep it that way.
+ Result<void> SwitchToMountNamespaceIfNeeded(MountNamespace target_mount_namespace) {
+-    if (IsRecoveryMode()) {
++    if (IsRecoveryMode() || !IsApexUpdatable()) {
+         // we don't have multiple namespaces in recovery mode or if apex is not updatable
+         return {};
+     }
+diff --git a/init/service.cpp b/init/service.cpp
+index ad302b14c2..6f8c7614a4 100644
+--- a/init/service.cpp
++++ b/init/service.cpp
+@@ -51,6 +51,7 @@
+ #endif
+ 
+ #ifdef INIT_FULL_SOURCES
++#include <ApexProperties.sysprop.h>
+ #include <android/api-level.h>
+ 
+ #include "mount_namespace.h"
+@@ -319,7 +320,7 @@ void Service::Reap(const siginfo_t& siginfo) {
+     }
+ 
+ #if INIT_FULL_SOURCES
+-    static bool is_apex_updatable = true;
++    static bool is_apex_updatable = android::sysprop::ApexProperties::updatable().value_or(false);
+ #else
+     static bool is_apex_updatable = false;
+ #endif
+-- 
+2.55.0
+

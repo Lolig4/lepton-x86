@@ -1,0 +1,461 @@
+From 30ab5f1bde5f17513f1785a1c88aca07c6dba3c6 Mon Sep 17 00:00:00 2001
+From: Elliot Saba <sabae@valvesoftware.com>
+Date: Mon, 20 Jan 2025 11:36:58 -0800
+Subject: [PATCH 1/1] lepton: disable many more services
+
+These are all tested to be unnecessary when running our games
+
+Change-Id: I68cda0a14f72320e2caaa774f889c6d4442dde63
+---
+ .../java/com/android/server/SystemServer.java | 68 ++++++++++++++++++-
+ 1 file changed, 65 insertions(+), 3 deletions(-)
+
+diff --git a/services/java/com/android/server/SystemServer.java b/services/java/com/android/server/SystemServer.java
+index 1291e3fe7075..586e25db18f9 100644
+--- a/services/java/com/android/server/SystemServer.java
++++ b/services/java/com/android/server/SystemServer.java
+@@ -1059,6 +1061,8 @@ public final class SystemServer {
+         boolean enableVrService = context.getPackageManager().hasSystemFeature(
+                 PackageManager.FEATURE_VR_MODE_HIGH_PERFORMANCE);
+ 
++        boolean leptonIsHeadless = SystemProperties.getBoolean("lepton.headless", false);
++
+         // For debugging RescueParty
+         if (Build.IS_DEBUGGABLE && SystemProperties.getBoolean("debug.crash_system", false)) {
+             throw new RuntimeException();
+@@ -1074,6 +1078,7 @@ public final class SystemServer {
+             // from the zygote. In the event that it takes too long, the webview
+             // RELRO process will block, but it will do so without holding any locks.
+             mZygotePreload = SystemServerInitThreadPool.submit(() -> {
++                /*
+                 try {
+                     Slog.i(TAG, SECONDARY_ZYGOTE_PRELOAD);
+                     TimingsTraceAndSlog traceLog = TimingsTraceAndSlog.newAsyncLog();
+@@ -1085,6 +1090,7 @@ public final class SystemServer {
+                 } catch (Exception ex) {
+                     Slog.e(TAG, "Exception preloading default resources", ex);
+                 }
++                */
+             }, SECONDARY_ZYGOTE_PRELOAD);
+ 
+             t.traceBegin("StartKeyAttestationApplicationIdProviderService");
+@@ -1138,22 +1144,26 @@ public final class SystemServer {
+             mSystemServiceManager.startService(DropBoxManagerService.class);
+             t.traceEnd();
+ 
++            /*
+             t.traceBegin("StartVibratorService");
+             vibrator = new VibratorService(context);
+             ServiceManager.addService("vibrator", vibrator);
+             t.traceEnd();
++            */
+ 
+             t.traceBegin("StartDynamicSystemService");
+             dynamicSystem = new DynamicSystemService(context);
+             ServiceManager.addService("dynamic_system", dynamicSystem);
+             t.traceEnd();
+ 
++            /*
+             if (!isWatch) {
+                 t.traceBegin("StartConsumerIrService");
+                 consumerIr = new ConsumerIrService(context);
+                 ServiceManager.addService(Context.CONSUMER_IR_SERVICE, consumerIr);
+                 t.traceEnd();
+             }
++            */
+ 
+             t.traceBegin("StartAlarmManagerService");
+             mSystemServiceManager.startService(new AlarmManagerService(context));
+@@ -1193,11 +1203,13 @@ public final class SystemServer {
+                 traceLog.traceEnd();
+             }, START_HIDL_SERVICES);
+ 
++            /*
+             if (!isWatch && enableVrService) {
+                 t.traceBegin("StartVrManagerService");
+                 mSystemServiceManager.startService(VrManagerService.class);
+                 t.traceEnd();
+             }
++            */
+ 
+             t.traceBegin("StartInputManager");
+             inputManager.setWindowManagerCallbacks(wm.getInputManagerCallback());
+@@ -1284,6 +1296,7 @@ public final class SystemServer {
+             }
+             t.traceEnd();
+ 
++            /*
+             t.traceBegin("StartAccessibilityManagerService");
+             try {
+                 mSystemServiceManager.startService(ACCESSIBILITY_MANAGER_SERVICE_CLASS);
+@@ -1291,6 +1304,7 @@ public final class SystemServer {
+                 reportWtf("starting Accessibility Manager", e);
+             }
+             t.traceEnd();
++            */
+         }
+ 
+         t.traceBegin("MakeDisplayReady");
+@@ -1333,6 +1347,7 @@ public final class SystemServer {
+         mSystemServiceManager.startService(UiModeManagerService.class);
+         t.traceEnd();
+ 
++        /*
+         if (!mOnlyCore) {
+             t.traceBegin("UpdatePackagesIfNeeded");
+             try {
+@@ -1353,6 +1368,7 @@ public final class SystemServer {
+             reportWtf("performing fstrim", e);
+         }
+         t.traceEnd();
++        */
+ 
+         if (mFactoryTestMode != FactoryTest.FACTORY_TEST_LOW_LEVEL) {
+             t.traceBegin("StartLockSettingsService");
+@@ -1365,6 +1381,7 @@ public final class SystemServer {
+             }
+             t.traceEnd();
+ 
++            /*
+             final boolean hasPdb = !SystemProperties.get(PERSISTENT_DATA_BLOCK_PROP).equals("");
+             final boolean hasGsi = SystemProperties.getInt(GSI_RUNNING_PROP, 0) > 0;
+             if (hasPdb && !hasGsi) {
+@@ -1383,6 +1400,7 @@ public final class SystemServer {
+                 mSystemServiceManager.startService(OemLockService.class);
+                 t.traceEnd();
+             }
++            */
+ 
+             t.traceBegin("StartDeviceIdleController");
+             mSystemServiceManager.startService(DEVICE_IDLE_CONTROLLER_CLASS);
+@@ -1411,6 +1429,7 @@ public final class SystemServer {
+             startSystemCaptionsManagerService(context, t);
+ 
+             // App prediction manager service
++            /*
+             if (deviceHasConfigString(context, R.string.config_defaultAppPredictionService)) {
+                 t.traceBegin("StartAppPredictionService");
+                 mSystemServiceManager.startService(APP_PREDICTION_MANAGER_SERVICE_CLASS);
+@@ -1418,6 +1437,7 @@ public final class SystemServer {
+             } else {
+                 Slog.d(TAG, "AppPredictionService not defined by OEM");
+             }
++            */
+ 
+             // Content suggestions manager service
+             if (deviceHasConfigString(context, R.string.config_defaultContentSuggestionsService)) {
+@@ -1453,7 +1473,7 @@ public final class SystemServer {
+             }
+             t.traceEnd();
+ 
+-
++            /*
+             t.traceBegin("StartIpSecService");
+             try {
+                 ipSecService = IpSecService.create(context, networkManagement);
+@@ -1462,6 +1482,7 @@ public final class SystemServer {
+                 reportWtf("starting IpSec Service", e);
+             }
+             t.traceEnd();
++            */
+ 
+             t.traceBegin("StartTextServicesManager");
+             mSystemServiceManager.startService(TextServicesManagerService.Lifecycle.class);
+@@ -1504,12 +1525,15 @@ public final class SystemServer {
+                 mSystemServiceManager.startServiceFromJar(
+                         WIFI_SERVICE_CLASS, WIFI_APEX_SERVICE_JAR_PATH);
+                 t.traceEnd();
++                /*
+                 t.traceBegin("StartWifiScanning");
+                 mSystemServiceManager.startServiceFromJar(
+                         WIFI_SCANNING_SERVICE_CLASS, WIFI_APEX_SERVICE_JAR_PATH);
+                 t.traceEnd();
++                */
+             }
+ 
++            /*
+             if (context.getPackageManager().hasSystemFeature(
+                     PackageManager.FEATURE_WIFI_RTT)) {
+                 t.traceBegin("StartRttService");
+@@ -1540,6 +1564,7 @@ public final class SystemServer {
+                 mSystemServiceManager.startService(LOWPAN_SERVICE_CLASS);
+                 t.traceEnd();
+             }
++            */
+ 
+             if (mPackageManager.hasSystemFeature(PackageManager.FEATURE_ETHERNET) ||
+                     mPackageManager.hasSystemFeature(PackageManager.FEATURE_USB_HOST)) {
+@@ -1561,6 +1586,7 @@ public final class SystemServer {
+             }
+             t.traceEnd();
+ 
++            /*
+             t.traceBegin("StartNsdService");
+             try {
+                 serviceDiscovery = NsdService.create(context);
+@@ -1588,6 +1614,7 @@ public final class SystemServer {
+                 reportWtf("starting UpdateLockService", e);
+             }
+             t.traceEnd();
++            */
+ 
+             t.traceBegin("StartNotificationManager");
+             mSystemServiceManager.startService(NotificationManagerService.class);
+@@ -1597,9 +1624,11 @@ public final class SystemServer {
+                     ServiceManager.getService(Context.NOTIFICATION_SERVICE));
+             t.traceEnd();
+ 
++            /*
+             t.traceBegin("StartDeviceMonitor");
+             mSystemServiceManager.startService(DeviceStorageMonitorService.class);
+             t.traceEnd();
++            */
+ 
+             t.traceBegin("StartLocationManagerService");
+             mSystemServiceManager.startService(LocationManagerService.Lifecycle.class);
+@@ -1630,7 +1659,7 @@ public final class SystemServer {
+             }
+             t.traceEnd();
+ 
+-            if (!isWatch) {
++            if (!isWatch && !leptonIsHeadless) {
+                 t.traceBegin("StartSearchManagerService");
+                 try {
+                     mSystemServiceManager.startService(SEARCH_MANAGER_SERVICE_CLASS);
+@@ -1666,6 +1695,7 @@ public final class SystemServer {
+             mSystemServiceManager.startService(SoundTriggerMiddlewareService.Lifecycle.class);
+             t.traceEnd();
+ 
++            /*
+             if (mPackageManager.hasSystemFeature(PackageManager.FEATURE_BROADCAST_RADIO)) {
+                 t.traceBegin("StartBroadcastRadioService");
+                 mSystemServiceManager.startService(BroadcastRadioService.class);
+@@ -1698,6 +1728,7 @@ public final class SystemServer {
+                 mSystemServiceManager.startService(MIDI_SERVICE_CLASS);
+                 t.traceEnd();
+             }
++            */
+ 
+             // Start ADB Debugging Service
+             t.traceBegin("StartAdbService");
+@@ -1708,6 +1739,7 @@ public final class SystemServer {
+             }
+             t.traceEnd();
+ 
++            /*
+             if (mPackageManager.hasSystemFeature(PackageManager.FEATURE_USB_HOST)
+                     || mPackageManager.hasSystemFeature(
+                     PackageManager.FEATURE_USB_ACCESSORY)
+@@ -1743,6 +1775,7 @@ public final class SystemServer {
+             t.traceBegin("StartTwilightService");
+             mSystemServiceManager.startService(TwilightService.class);
+             t.traceEnd();
++            */
+ 
+             t.traceBegin("StartColorDisplay");
+             mSystemServiceManager.startService(ColorDisplayService.class);
+@@ -1761,11 +1794,13 @@ public final class SystemServer {
+             mSystemServiceManager.startService(TrustManagerService.class);
+             t.traceEnd();
+ 
++            /*
+             if (mPackageManager.hasSystemFeature(PackageManager.FEATURE_BACKUP)) {
+                 t.traceBegin("StartBackupManager");
+                 mSystemServiceManager.startService(BACKUP_MANAGER_SERVICE_CLASS);
+                 t.traceEnd();
+             }
++            */
+ 
+             if (mPackageManager.hasSystemFeature(PackageManager.FEATURE_APP_WIDGETS)
+                     || context.getResources().getBoolean(R.bool.config_enableAppWidgetService)) {
+@@ -1797,11 +1832,13 @@ public final class SystemServer {
+             mSystemServiceManager.startService(SensorNotificationService.class);
+             t.traceEnd();
+ 
++            /*
+             if (mPackageManager.hasSystemFeature(PackageManager.FEATURE_CONTEXT_HUB)) {
+                 t.traceBegin("StartContextHubSystemService");
+                 mSystemServiceManager.startService(ContextHubSystemService.class);
+                 t.traceEnd();
+             }
++            */
+ 
+             t.traceBegin("StartDiskStatsService");
+             try {
+@@ -1823,6 +1860,7 @@ public final class SystemServer {
+             // required for safe time zone updates might be broken. RuleManagerService cannot do
+             // this check when mOnlyCore == true, so we don't enable the service in this case.
+             // This service requires that JobSchedulerService is already started when it starts.
++            /*
+             final boolean startRulesManagerService =
+                     !mOnlyCore && context.getResources().getBoolean(
+                             R.bool.config_enableUpdateableTimeZoneRules);
+@@ -1850,6 +1888,7 @@ public final class SystemServer {
+                 reportWtf("starting CertBlacklister", e);
+             }
+             t.traceEnd();
++            */
+ 
+             if (EmergencyAffordanceManager.ENABLED) {
+                 // EmergencyMode service
+@@ -1875,12 +1914,15 @@ public final class SystemServer {
+                     new GraphicsStatsService(context));
+             t.traceEnd();
+ 
++            /*
+             if (CoverageService.ENABLED) {
+                 t.traceBegin("AddCoverageService");
+                 ServiceManager.addService(CoverageService.COVERAGE_SERVICE, new CoverageService());
+                 t.traceEnd();
+             }
++            */
+ 
++            /*
+             if (mPackageManager.hasSystemFeature(PackageManager.FEATURE_PRINTING)) {
+                 t.traceBegin("StartPrintManager");
+                 mSystemServiceManager.startService(PRINT_MANAGER_SERVICE_CLASS);
+@@ -1896,11 +1938,13 @@ public final class SystemServer {
+             t.traceBegin("StartRestrictionManager");
+             mSystemServiceManager.startService(RestrictionsManagerService.class);
+             t.traceEnd();
++            */
+ 
+             t.traceBegin("StartMediaSessionService");
+             mSystemServiceManager.startService(MediaSessionService.class);
+             t.traceEnd();
+ 
++            /*
+             if (mPackageManager.hasSystemFeature(PackageManager.FEATURE_HDMI_CEC)) {
+                 t.traceBegin("StartHdmiControlService");
+                 mSystemServiceManager.startService(HdmiControlService.class);
+@@ -1931,6 +1975,7 @@ public final class SystemServer {
+                 mSystemServiceManager.startService(TvRemoteService.class);
+                 t.traceEnd();
+             }
++            */
+ 
+             t.traceBegin("StartMediaRouterService");
+             try {
+@@ -1948,6 +1993,7 @@ public final class SystemServer {
+             final boolean hasFeatureFingerprint
+                     = mPackageManager.hasSystemFeature(PackageManager.FEATURE_FINGERPRINT);
+ 
++            /*
+             if (hasFeatureFace) {
+                 t.traceBegin("StartFaceSensor");
+                 mSystemServiceManager.startService(FaceService.class);
+@@ -1974,8 +2020,10 @@ public final class SystemServer {
+             t.traceBegin("StartAuthService");
+             mSystemServiceManager.startService(AuthService.class);
+             t.traceEnd();
++            */
+ 
+ 
++            /*
+             t.traceBegin("StartBackgroundDexOptService");
+             try {
+                 BackgroundDexOptService.schedule(context);
+@@ -2005,6 +2053,7 @@ public final class SystemServer {
+                 }
+                 t.traceEnd();
+             }
++            */
+ 
+             // LauncherAppsService uses ShortcutService.
+             t.traceBegin("StartShortcutServiceLifecycle");
+@@ -2030,6 +2081,7 @@ public final class SystemServer {
+             t.traceEnd();
+         }
+ 
++        /*
+         if (isWatch) {
+             // Must be started before services that depend it, e.g. WearConnectivityService
+             t.traceBegin("StartWearPowerService");
+@@ -2058,6 +2110,7 @@ public final class SystemServer {
+             mSystemServiceManager.startService(WEAR_GLOBAL_ACTIONS_SERVICE_CLASS);
+             t.traceEnd();
+         }
++        */
+ 
+         if (!mPackageManager.hasSystemFeature(PackageManager.FEATURE_SLICES_DISABLED)) {
+             t.traceBegin("StartSliceManagerService");
+@@ -2065,6 +2118,7 @@ public final class SystemServer {
+             t.traceEnd();
+         }
+ 
++        /*
+         if (!disableCameraService) {
+             t.traceBegin("StartCameraServiceProxy");
+             mSystemServiceManager.startService(CameraServiceProxy.class);
+@@ -2076,6 +2130,7 @@ public final class SystemServer {
+             mSystemServiceManager.startService(IOT_SERVICE_CLASS);
+             t.traceEnd();
+         }
++        */
+ 
+         // Statsd helper
+         t.traceBegin("StartStatsCompanion");
+@@ -2088,16 +2143,19 @@ public final class SystemServer {
+         mSystemServiceManager.startService(STATS_PULL_ATOM_SERVICE_CLASS);
+         t.traceEnd();
+ 
++        /*
+         // Incidentd and dumpstated helper
+         t.traceBegin("StartIncidentCompanionService");
+         mSystemServiceManager.startService(IncidentCompanionService.class);
+         t.traceEnd();
++        */
+ 
+         if (safeMode) {
+             mActivityManagerService.enterSafeMode();
+         }
+ 
+         // MMS service broker
++        /*
+         t.traceBegin("StartMmsService");
+         mmsService = mSystemServiceManager.startService(MmsServiceBroker.class);
+         t.traceEnd();
+@@ -2112,6 +2170,7 @@ public final class SystemServer {
+         t.traceBegin("StartClipboardService");
+         mSystemServiceManager.startService(ClipboardService.class);
+         t.traceEnd();
++        */
+ 
+         t.traceBegin("AppServiceManager");
+         mSystemServiceManager.startService(AppBindingService.Lifecycle.class);
+@@ -2136,7 +2195,7 @@ public final class SystemServer {
+         }
+ 
+         // It is now time to start up the app processes...
+-
++        /*
+         t.traceBegin("MakeVibratorServiceReady");
+         try {
+             vibrator.systemReady();
+@@ -2144,6 +2203,7 @@ public final class SystemServer {
+             reportWtf("making Vibrator Service ready", e);
+         }
+         t.traceEnd();
++        */
+ 
+         t.traceBegin("MakeLockSettingsServiceReady");
+         if (lockSettings != null) {
+@@ -2198,6 +2258,7 @@ public final class SystemServer {
+             systemTheme.rebase();
+         }
+ 
++        /*
+         t.traceBegin("MakePowerManagerServiceReady");
+         try {
+             // TODO: use boot phase
+@@ -2206,6 +2267,7 @@ public final class SystemServer {
+             reportWtf("making Power Manager Service ready", e);
+         }
+         t.traceEnd();
++        */
+ 
+         // Permission policy service
+         t.traceBegin("StartPermissionPolicyService");
+-- 
+2.54.0
+

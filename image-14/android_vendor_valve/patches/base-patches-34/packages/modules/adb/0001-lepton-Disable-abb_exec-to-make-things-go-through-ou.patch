@@ -1,0 +1,27 @@
+From a65b935b2a49cf1c7edd96c751b334e4f44531c4 Mon Sep 17 00:00:00 2001
+From: Franz-Josef Haider <frajo@frajo.fi>
+Date: Wed, 25 Feb 2026 14:45:11 +0200
+Subject: [PATCH 1/2] lepton: Disable abb_exec to make things go through our
+ cmd hook.
+
+Change-Id: Ic11343bd56ad14d75ce2f542dd1f7daa7329e92b
+---
+ transport.cpp | 2 +-
+ 1 file changed, 1 insertion(+), 1 deletion(-)
+
+diff --git a/transport.cpp b/transport.cpp
+index d17ead76..9d871102 100644
+--- a/transport.cpp
++++ b/transport.cpp
+@@ -1196,7 +1196,7 @@ const FeatureSet& supported_features() {
+             kFeatureApex,
+             kFeatureAbb,
+             kFeatureFixedPushSymlinkTimestamp,
+-            kFeatureAbbExec,
++//            kFeatureAbbExec,
+             kFeatureRemountShell,
+             kFeatureTrackApp,
+             kFeatureSendRecv2,
+-- 
+2.55.0
+

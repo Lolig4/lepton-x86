@@ -1,0 +1,31 @@
+From fd5bab81af583fa2cb7b31859db736bbb0658fc4 Mon Sep 17 00:00:00 2001
+From: SteamOS Waydroid Builder <waydroid-builder@steamos.cloud>
+Date: Wed, 24 Sep 2025 18:56:03 +0000
+Subject: [PATCH] Disable setting casefold on `/data/media`
+
+This allows us to use the recently-merged overlayfs patches that allow
+using casefold-capable layers (but not mixing casefold-enabled and
+casefold-disabled layers).
+
+Change-Id: I6041b19ab0a9dd65eb1e3c6b452d7646d5fda96c
+---
+ rootdir/init.rc | 3 ++-
+ 1 file changed, 2 insertions(+), 1 deletion(-)
+
+diff --git a/rootdir/init.rc b/rootdir/init.rc
+index b47cf183f..4d3c12533 100644
+--- a/rootdir/init.rc
++++ b/rootdir/init.rc
+@@ -757,7 +757,8 @@ on post-fs-data
+ 
+     # Special-case /data/media/obb per b/64566063
+     mkdir /data/media 0770 media_rw media_rw encryption=None
+-    exec - media_rw media_rw -- /system/bin/chattr +F /data/media
++    # Don't set casefold on for /data/media, because our overlayfs doesn't support it!
++    #exec - media_rw media_rw -- /system/bin/chattr +F /data/media
+     mkdir /data/media/obb 0770 media_rw media_rw encryption=Attempt
+ 
+     exec_start derive_sdk
+-- 
+2.34.1
+

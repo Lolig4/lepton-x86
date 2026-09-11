@@ -1,0 +1,32 @@
+{
+  "version": "2.0.0",
+  "inputs": [
+    {
+        "id": "deploy_target",
+        "type": "promptString",
+        "description": "Hostname to deploy to via SSH",
+        "default": "frame.local",
+    }
+  ],
+  "tasks": [
+    {
+      "label": "Build Compat Tool",
+      "type": "shell",
+      "command": "./.ci_scripts/build-compat_tool.sh",
+      "group": {
+        "kind": "build",
+      },
+    },
+    {
+      "label": "Build and Deploy Compat Tool ",
+      "type": "shell",
+      "command": "./.ci_scripts/deploy-compat_tool.sh ${input:deploy_target}",
+      "group": {
+        "kind": "build",
+      },
+      "dependsOn": [
+        "Build Compat Tool",
+      ]
+    },
+  ]
+}

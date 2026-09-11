@@ -1,0 +1,65 @@
+From e0e2201ba24c8145e4c05f172592c668196a8e57 Mon Sep 17 00:00:00 2001
+From: Franz-Josef Haider <frajo@frajo.fi>
+Date: Mon, 29 Dec 2025 18:15:36 +0200
+Subject: [PATCH 2/2] lepton: Don't use getUidForPid as it would always return
+ 0, to avoid a deadlock.
+
+Change-Id: Iecc32c66a3cf599493af42296dfb386e085d9491
+---
+ core/java/android/os/Process.java                             | 4 ++++
+ .../java/com/android/server/am/ActivityManagerService.java    | 3 ++-
+ .../com/android/server/stats/pull/StatsPullAtomService.java   | 2 +-
+ 3 files changed, 7 insertions(+), 2 deletions(-)
+
+diff --git a/core/java/android/os/Process.java b/core/java/android/os/Process.java
+index feabd06acb8..5ce03fcb22b 100644
+--- a/core/java/android/os/Process.java
++++ b/core/java/android/os/Process.java
+@@ -39,6 +39,8 @@ import java.util.Map;
+ import java.util.StringTokenizer;
+ import java.util.concurrent.TimeoutException;
+ 
++import android.util.Slog;
++
+ /**
+  * Tools for managing OS processes.
+  */
+@@ -822,6 +824,8 @@ public class Process {
+      */
+     @UnsupportedAppUsage
+     public static final int getUidForPid(int pid) {
++        Slog.wtf("Lepton", "getUidForPid should be avoided!");
++
+         String[] procStatusLabels = { "Uid:" };
+         long[] procStatusValues = new long[1];
+         procStatusValues[0] = -1;
+diff --git a/services/core/java/com/android/server/am/ActivityManagerService.java b/services/core/java/com/android/server/am/ActivityManagerService.java
+index fa6fafbc51f..a590d381e10 100644
+--- a/services/core/java/com/android/server/am/ActivityManagerService.java
++++ b/services/core/java/com/android/server/am/ActivityManagerService.java
+@@ -7096,7 +7096,8 @@ public class ActivityManagerService extends IActivityManager.Stub
+         if (DEBUG_OOM_ADJ) Slog.d(TAG, "RETRIEVED STATE FOR " + proc.procStatFile + ": "
+                 + (char)state);
+         if (state != 'Z' && state != 'X' && state != 'x' && state != 'K') {
+-            return Process.getUidForPid(proc.pid) == proc.uid;
++            return true;
++            //return Process.getUidForPid(proc.pid) == proc.uid;
+         }
+         return false;
+     }
+diff --git a/services/core/java/com/android/server/stats/pull/StatsPullAtomService.java b/services/core/java/com/android/server/stats/pull/StatsPullAtomService.java
+index 68ff0229d5c..3924cb0e9d5 100644
+--- a/services/core/java/com/android/server/stats/pull/StatsPullAtomService.java
++++ b/services/core/java/com/android/server/stats/pull/StatsPullAtomService.java
+@@ -2044,7 +2044,7 @@ public class StatsPullAtomService extends SystemService {
+         for (IonAllocations allocations : result) {
+             StatsEvent e = StatsEvent.newBuilder()
+                     .setAtomId(atomTag)
+-                    .writeInt(getUidForPid(allocations.pid))
++                    .writeInt(0) //getUidForPid(allocations.pid)) // unsupported in Lepton (this function is for log puproses only)
+                     .addBooleanAnnotation(ANNOTATION_ID_IS_UID, true)
+                     .writeString(readCmdlineFromProcfs(allocations.pid))
+                     .writeInt((int) (allocations.totalSizeInBytes / 1024))
+-- 
+2.52.0
+

@@ -1,0 +1,55 @@
+From c17e4747873ddc4320cd6d6b0cd6ab13e3ec2ab7 Mon Sep 17 00:00:00 2001
+From: Franz-Josef Haider <frajo@frajo.fi>
+Date: Tue, 30 Jun 2026 21:20:47 +0300
+Subject: [PATCH 5/9] Revert "Fix ABI breakage headers"
+
+This reverts commit d130fb7716b376b60242be0c00bbf535f7a36ac5.
+---
+ transport/ServiceManagement.cpp            | 10 ----------
+ transport/include/hidl/ServiceManagement.h |  9 +++------
+ 2 files changed, 3 insertions(+), 16 deletions(-)
+
+diff --git a/transport/ServiceManagement.cpp b/transport/ServiceManagement.cpp
+index 56860eb..908de3f 100644
+--- a/transport/ServiceManagement.cpp
++++ b/transport/ServiceManagement.cpp
+@@ -165,16 +165,6 @@ void onRegistration(const std::string& packageName, const std::string& interface
+ 
+ }  // details
+ 
+-sp<IServiceManager1_0> defaultServiceManager() {
+-    return defaultServiceManager1_2(false);
+-}
+-sp<IServiceManager1_1> defaultServiceManager1_1() {
+-    return defaultServiceManager1_2(false);
+-}
+-sp<IServiceManager1_2> defaultServiceManager1_2() {
+-    return defaultServiceManager1_2(false);
+-}
+-
+ sp<IServiceManager1_0> defaultServiceManager(bool useHostHwBinder) {
+     return defaultServiceManager1_2(useHostHwBinder);
+ }
+diff --git a/transport/include/hidl/ServiceManagement.h b/transport/include/hidl/ServiceManagement.h
+index b0201be..9eaa972 100644
+--- a/transport/include/hidl/ServiceManagement.h
++++ b/transport/include/hidl/ServiceManagement.h
+@@ -65,12 +65,9 @@ status_t registerAsServiceInternal(const sp<::android::hidl::base::V1_0::IBase>&
+ 
+ // These functions are for internal use by hidl. If you want to get ahold
+ // of an interface, the best way to do this is by calling IFoo::getService()
+-sp<::android::hidl::manager::V1_0::IServiceManager> defaultServiceManager();
+-sp<::android::hidl::manager::V1_1::IServiceManager> defaultServiceManager1_1();
+-sp<::android::hidl::manager::V1_2::IServiceManager> defaultServiceManager1_2();
+-sp<::android::hidl::manager::V1_0::IServiceManager> defaultServiceManager(bool useHostHwBinder);
+-sp<::android::hidl::manager::V1_1::IServiceManager> defaultServiceManager1_1(bool useHostHwBinder);
+-sp<::android::hidl::manager::V1_2::IServiceManager> defaultServiceManager1_2(bool useHostHwBinder);
++sp<::android::hidl::manager::V1_0::IServiceManager> defaultServiceManager(bool useHostHwBinder=false);
++sp<::android::hidl::manager::V1_1::IServiceManager> defaultServiceManager1_1(bool useHostHwBinder=false);
++sp<::android::hidl::manager::V1_2::IServiceManager> defaultServiceManager1_2(bool useHostHwBinder=false);
+ sp<::android::hidl::manager::V1_0::IServiceManager> getPassthroughServiceManager();
+ sp<::android::hidl::manager::V1_1::IServiceManager> getPassthroughServiceManager1_1();
+ 
+-- 
+2.54.0
+

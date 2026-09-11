@@ -1,0 +1,45 @@
+From 4ac7e09c04e0cfc15b605bc43be66019af125e07 Mon Sep 17 00:00:00 2001
+From: Franz-Josef Haider <frajo@frajo.fi>
+Date: Tue, 27 Jan 2026 14:25:31 +0200
+Subject: [PATCH 1/2] lepton: Wait for strace in isDebuggerConnected logic if
+ requested.
+
+Android 14 update: set the application pid, so that we can find it when attaching with strace.
+
+Change-Id: I79fa980c466d7568245ebaca5bf4ad776bca8dc4
+---
+ runtime/native/dalvik_system_VMDebug.cc | 11 +++++++++++
+ 1 file changed, 11 insertions(+)
+
+diff --git a/runtime/native/dalvik_system_VMDebug.cc b/runtime/native/dalvik_system_VMDebug.cc
+index 137b04fede..d0ffd48bf8 100644
+--- a/runtime/native/dalvik_system_VMDebug.cc
++++ b/runtime/native/dalvik_system_VMDebug.cc
+@@ -21,6 +21,9 @@
+ 
+ #include <sstream>
+ 
++#include "base/utils.h"
++#include "android-base/properties.h"
++
+ #include "nativehelper/jni_macros.h"
+ 
+ #include "base/file_utils.h"
+@@ -153,6 +156,14 @@ static void VMDebug_stopMethodTracing(JNIEnv*, jclass) {
+ static jboolean VMDebug_isDebuggerConnected(JNIEnv*, jclass) {
+   // This function will be replaced by the debugger when it's connected. See
+   // external/oj-libjdwp/src/share/vmDebug.c for implementation when debugger is connected.
++
++  // Lepton: allow waiting for strace.
++  if (android::base::GetBoolProperty("ro.lepton.wait_for_debugger", false)) {
++    android::base::SetProperty("ro.lepton.application_pid", std::to_string(getpid()));
++    android::base::SetProperty("ro.lepton.ready_for_debugger", "true");
++    return GetProcessStatus("TracerPid") != "0";
++  }
++
+   return false;
+ }
+ 
+-- 
+2.55.0
+

@@ -1,0 +1,52 @@
+From a6e26a80881750172e58e4044711573f5ddf4ad5 Mon Sep 17 00:00:00 2001
+From: Franz-Josef Haider <frajo@frajo.fi>
+Date: Tue, 30 Jun 2026 20:11:45 +0300
+Subject: [PATCH 3/3] Revert "libcameraservice: Use listByInterface"
+
+This reverts commit 08689a62f2c004aece115875c499e2bfbb11bde5.
+---
+ .../common/CameraProviderManager.cpp            | 17 ++++-------------
+ 1 file changed, 4 insertions(+), 13 deletions(-)
+
+diff --git a/services/camera/libcameraservice/common/CameraProviderManager.cpp b/services/camera/libcameraservice/common/CameraProviderManager.cpp
+index 17d7a3e5ee..230abb79b4 100644
+--- a/services/camera/libcameraservice/common/CameraProviderManager.cpp
++++ b/services/camera/libcameraservice/common/CameraProviderManager.cpp
+@@ -29,7 +29,7 @@
+ #include <future>
+ #include <inttypes.h>
+ #include <hardware/camera_common.h>
+-#include <android/hidl/manager/1.1/IServiceManager.h>
++#include <android/hidl/manager/1.2/IServiceManager.h>
+ #include <hidl/ServiceManagement.h>
+ #include <functional>
+ #include <camera_metadata_hidden.h>
+@@ -66,22 +66,13 @@ CameraProviderManager::~CameraProviderManager() {
+ hardware::hidl_vec<hardware::hidl_string>
+ CameraProviderManager::HardwareServiceInteractionProxy::listServices() {
+     hardware::hidl_vec<hardware::hidl_string> ret;
+-    auto manager = hardware::defaultServiceManager1_1();
+-    auto manager_host = hardware::defaultServiceManager1_1(true);
+-    if (manager_host != nullptr) {
+-        manager_host->listByInterface(provider::V2_4::ICameraProvider::descriptor,
++    auto manager = hardware::defaultServiceManager1_2();
++    if (manager != nullptr) {
++        manager->listManifestByInterface(provider::V2_4::ICameraProvider::descriptor,
+                 [&ret](const hardware::hidl_vec<hardware::hidl_string> &registered) {
+                     ret = registered;
+                 });
+     }
+-    if (ret.size() == 0) {
+-        if (manager != nullptr) {
+-            manager->listByInterface(provider::V2_4::ICameraProvider::descriptor,
+-                    [&ret](const hardware::hidl_vec<hardware::hidl_string> &registered) {
+-                        ret = registered;
+-                    });
+-        }
+-    }
+     return ret;
+ }
+ 
+-- 
+2.54.0
+

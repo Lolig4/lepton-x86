@@ -1,0 +1,58 @@
+From 40f409eaa1118fa1ce094f62ba043f3a062e7c2c Mon Sep 17 00:00:00 2001
+From: Franz-Josef Haider <frajo@frajo.fi>
+Date: Tue, 30 Jun 2026 21:20:46 +0300
+Subject: [PATCH 4/9] Revert "libhidl: Add vendor_extra to passthrough paths"
+
+This reverts commit c74d24fcf19b27072b7a66073b888b8cdbeeb984.
+---
+ base/include/hidl/HidlInternal.h | 4 ----
+ transport/ServiceManagement.cpp  | 3 +--
+ 2 files changed, 1 insertion(+), 6 deletions(-)
+
+diff --git a/base/include/hidl/HidlInternal.h b/base/include/hidl/HidlInternal.h
+index e5d8a4c..ee87b87 100644
+--- a/base/include/hidl/HidlInternal.h
++++ b/base/include/hidl/HidlInternal.h
+@@ -116,25 +116,21 @@ private:
+ #define HAL_LIBRARY_PATH_SYSTEM_64BIT "/system/lib64/hw/"
+ #define HAL_LIBRARY_PATH_VNDK_SP_64BIT_FOR_VERSION "/apex/com.android.vndk.v%s/lib64/hw/"
+ #define HAL_LIBRARY_PATH_VENDOR_64BIT "/vendor/lib64/hw/"
+-#define HAL_LIBRARY_PATH_VENDOR_EXTRA_64BIT "/vendor_extra/lib64/hw/"
+ #define HAL_LIBRARY_PATH_ODM_64BIT    "/odm/lib64/hw/"
+ #define HAL_LIBRARY_PATH_SYSTEM_32BIT "/system/lib/hw/"
+ #define HAL_LIBRARY_PATH_VNDK_SP_32BIT_FOR_VERSION "/apex/com.android.vndk.v%s/lib/hw/"
+ #define HAL_LIBRARY_PATH_VENDOR_32BIT "/vendor/lib/hw/"
+-#define HAL_LIBRARY_PATH_VENDOR_EXTRA_32BIT "/vendor_extra/lib/hw/"
+ #define HAL_LIBRARY_PATH_ODM_32BIT    "/odm/lib/hw/"
+ 
+ #if defined(__LP64__)
+ #define HAL_LIBRARY_PATH_SYSTEM HAL_LIBRARY_PATH_SYSTEM_64BIT
+ #define HAL_LIBRARY_PATH_VNDK_SP_FOR_VERSION HAL_LIBRARY_PATH_VNDK_SP_64BIT_FOR_VERSION
+ #define HAL_LIBRARY_PATH_VENDOR HAL_LIBRARY_PATH_VENDOR_64BIT
+-#define HAL_LIBRARY_PATH_VENDOR_EXTRA HAL_LIBRARY_PATH_VENDOR_EXTRA_64BIT
+ #define HAL_LIBRARY_PATH_ODM    HAL_LIBRARY_PATH_ODM_64BIT
+ #else
+ #define HAL_LIBRARY_PATH_SYSTEM HAL_LIBRARY_PATH_SYSTEM_32BIT
+ #define HAL_LIBRARY_PATH_VNDK_SP_FOR_VERSION HAL_LIBRARY_PATH_VNDK_SP_32BIT_FOR_VERSION
+ #define HAL_LIBRARY_PATH_VENDOR HAL_LIBRARY_PATH_VENDOR_32BIT
+-#define HAL_LIBRARY_PATH_VENDOR_EXTRA HAL_LIBRARY_PATH_VENDOR_EXTRA_32BIT
+ #define HAL_LIBRARY_PATH_ODM    HAL_LIBRARY_PATH_ODM_32BIT
+ #endif
+ 
+diff --git a/transport/ServiceManagement.cpp b/transport/ServiceManagement.cpp
+index 8612601..56860eb 100644
+--- a/transport/ServiceManagement.cpp
++++ b/transport/ServiceManagement.cpp
+@@ -345,8 +345,7 @@ struct PassthroughServiceManager : IServiceManager1_1 {
+         static std::string halLibPathVndkSp = android::base::StringPrintf(
+             HAL_LIBRARY_PATH_VNDK_SP_FOR_VERSION, details::getVndkVersionStr().c_str());
+         std::vector<std::string> paths = {
+-            HAL_LIBRARY_PATH_ODM, HAL_LIBRARY_PATH_VENDOR,
+-            HAL_LIBRARY_PATH_VENDOR_EXTRA, halLibPathVndkSp,
++            HAL_LIBRARY_PATH_ODM, HAL_LIBRARY_PATH_VENDOR, halLibPathVndkSp,
+ #ifndef __ANDROID_VNDK__
+             HAL_LIBRARY_PATH_SYSTEM,
+ #endif
+-- 
+2.54.0
+

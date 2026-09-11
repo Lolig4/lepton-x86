@@ -1,0 +1,31 @@
+From 9fe942b8bf3ed407ce73b1f99c527ca8521598dc Mon Sep 17 00:00:00 2001
+From: Franz-Josef Haider <frajo@frajo.fi>
+Date: Sun, 19 Jul 2026 22:07:03 +0300
+Subject: [PATCH 1/1] Print the backtrace for all threads if a process crashes
+ to logcat.
+
+Change-Id: Iba361b6102639338de9f454fb8a8437bd81a12c5
+---
+ debuggerd/libdebuggerd/utility.cpp | 4 ++--
+ 1 file changed, 2 insertions(+), 2 deletions(-)
+
+diff --git a/debuggerd/libdebuggerd/utility.cpp b/debuggerd/libdebuggerd/utility.cpp
+index 559d53f3f..6c353f98e 100644
+--- a/debuggerd/libdebuggerd/utility.cpp
++++ b/debuggerd/libdebuggerd/utility.cpp
+@@ -77,10 +77,10 @@ void _LOG(log_t* log, enum logtype ltype, const char* fmt, ...) {
+ __attribute__((__weak__, visibility("default")))
+ void _VLOG(log_t* log, enum logtype ltype, const char* fmt, va_list ap) {
+   bool write_to_tombstone = (log->tfd != -1);
+-  bool write_to_logcat = is_allowed_in_logcat(ltype)
++  bool write_to_logcat = is_allowed_in_logcat(ltype); /*
+                       && log->crashed_tid != -1
+                       && log->current_tid != -1
+-                      && (log->crashed_tid == log->current_tid);
++                      && (log->crashed_tid == log->current_tid);*/
+   static bool write_to_kmsg = should_write_to_kmsg();
+ 
+   std::string msg;
+-- 
+2.55.0
+

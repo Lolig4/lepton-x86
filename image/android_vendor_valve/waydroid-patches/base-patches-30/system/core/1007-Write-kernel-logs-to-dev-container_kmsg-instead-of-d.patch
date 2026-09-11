@@ -1,0 +1,59 @@
+From 601ef5a5f3a605e8dce92c0703e72f0a7db10d7b Mon Sep 17 00:00:00 2001
+From: Elliot Saba <sabae@valvesoftware.com>
+Date: Tue, 28 Jan 2025 14:25:32 -0800
+Subject: [PATCH] Write kernel logs to `/dev/container_kmsg` instead of
+ `/dev/kmsg`
+
+This allows us to trivially control (via LXC bind-mounting) whether
+kernel messages go to the actual kernel log, or to somewhere else
+(typically `/dev/null`).
+
+Change-Id: If618e927a660d2dbf89b9c6f249cc8c5edd65f27
+---
+ base/logging.cpp          | 2 +-
+ init/first_stage_init.cpp | 2 +-
+ logd/main.cpp             | 2 +-
+ 3 files changed, 3 insertions(+), 3 deletions(-)
+
+diff --git a/base/logging.cpp b/base/logging.cpp
+index 5bd21da66..a870f2221 100644
+--- a/base/logging.cpp
++++ b/base/logging.cpp
+@@ -115,7 +115,7 @@ static int OpenKmsg() {
+     }
+   }
+ #endif
+-  return TEMP_FAILURE_RETRY(open("/dev/kmsg", O_WRONLY | O_CLOEXEC));
++  return TEMP_FAILURE_RETRY(open("/dev/container_kmsg", O_WRONLY | O_CLOEXEC));
+ }
+ #endif
+ 
+diff --git a/init/first_stage_init.cpp b/init/first_stage_init.cpp
+index 77bebe315..fe08d5036 100644
+--- a/init/first_stage_init.cpp
++++ b/init/first_stage_init.cpp
+@@ -349,7 +349,7 @@ int FirstStageMain(int argc, char** argv) {
+         next_stage = "second_stage";
+     }
+     const char* args[] = {path, next_stage, nullptr};
+-    auto fd = open("/dev/kmsg", O_WRONLY | O_CLOEXEC);
++    auto fd = open("/dev/container_kmsg", O_WRONLY | O_CLOEXEC);
+     dup2(fd, STDOUT_FILENO);
+     dup2(fd, STDERR_FILENO);
+     close(fd);
+diff --git a/logd/main.cpp b/logd/main.cpp
+index acf9a071f..bdc75f0e5 100644
+--- a/logd/main.cpp
++++ b/logd/main.cpp
+@@ -313,7 +313,7 @@ int main(int argc, char* argv[]) {
+         return issueReinit();
+     }
+ 
+-    static const char dev_kmsg[] = "/dev/kmsg";
++    static const char dev_kmsg[] = "/dev/container_kmsg";
+     fdDmesg = android_get_control_file(dev_kmsg);
+     if (fdDmesg < 0) {
+         fdDmesg = TEMP_FAILURE_RETRY(open(dev_kmsg, O_WRONLY | O_CLOEXEC));
+-- 
+2.34.1
+

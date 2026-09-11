@@ -1,0 +1,66 @@
+From f9297652915aa96f1aebc3a273554c9f4a728551 Mon Sep 17 00:00:00 2001
+From: Erfan Abdi <erfangplus@gmail.com>
+Date: Sun, 25 Jul 2021 03:38:14 +0800
+Subject: [PATCH 2/5] vold: Drop selinux checks on prepare_subdirs
+
+Change-Id: I60936b9972e7dd9906e9bfd935af6dbc63aa0493
+---
+ MetadataCrypt.cpp        | 4 ++++
+ vold_prepare_subdirs.cpp | 5 +++++
+ 2 files changed, 9 insertions(+)
+
+diff --git a/MetadataCrypt.cpp b/MetadataCrypt.cpp
+index 0e2cad17..54fa5855 100644
+--- a/MetadataCrypt.cpp
++++ b/MetadataCrypt.cpp
+@@ -251,6 +251,10 @@ bool fscrypt_mount_metadata_encrypted(const std::string& blk_device, const std::
+                << " encrypt: " << needs_encrypt << " format: " << should_format << " with "
+                << fs_type << " block device: " << blk_device
+                << " and zoned device: " << zoned_device;
++
++    // Disabled for Halium
++    return false;
++
+     auto encrypted_state = android::base::GetProperty("ro.crypto.state", "");
+     if (encrypted_state != "" && encrypted_state != "encrypted") {
+         LOG(ERROR) << "fscrypt_mount_metadata_encrypted got unexpected starting state: "
+diff --git a/vold_prepare_subdirs.cpp b/vold_prepare_subdirs.cpp
+index e82a7c2d..478246dd 100644
+--- a/vold_prepare_subdirs.cpp
++++ b/vold_prepare_subdirs.cpp
+@@ -58,6 +58,8 @@ static bool prepare_dir_for_user(struct selabel_handle* sehandle, mode_t mode, u
+                                  const std::string& path, uid_t user_id) {
+     auto clearfscreatecon = android::base::make_scope_guard([] { setfscreatecon(nullptr); });
+     auto secontext = std::unique_ptr<char, void (*)(char*)>(nullptr, freecon);
++
++    /*
+     char* tmp_secontext;
+ 
+     if (selabel_lookup(sehandle, &tmp_secontext, path.c_str(), S_IFDIR) == 0) {
+@@ -80,6 +82,7 @@ static bool prepare_dir_for_user(struct selabel_handle* sehandle, mode_t mode, u
+         PLOG(ERROR) << "Failed to look up selabel for directory " << path;
+         return false;
+     }
++    */
+ 
+     LOG(DEBUG) << "Setting up mode " << std::oct << mode << std::dec << " uid " << uid << " gid "
+                << gid << " context " << (secontext ? secontext.get() : "null")
+@@ -87,6 +90,7 @@ static bool prepare_dir_for_user(struct selabel_handle* sehandle, mode_t mode, u
+     if (fs_prepare_dir(path.c_str(), mode, uid, gid) != 0) {
+         return false;
+     }
++    /*
+     if (secontext) {
+         char* tmp_oldsecontext = nullptr;
+         if (lgetfilecon(path.c_str(), &tmp_oldsecontext) < 0) {
+@@ -103,6 +107,7 @@ static bool prepare_dir_for_user(struct selabel_handle* sehandle, mode_t mode, u
+             }
+         }
+     }
++    */
+     return true;
+ }
+ 
+-- 
+2.55.0
+

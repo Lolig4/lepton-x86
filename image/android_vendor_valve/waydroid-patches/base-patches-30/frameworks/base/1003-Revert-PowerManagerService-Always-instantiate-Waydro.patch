@@ -1,0 +1,28 @@
+From dc590e6336d289a051448e67c9cf714734dc4dc6 Mon Sep 17 00:00:00 2001
+From: Elliot Saba <sabae@valvesoftware.com>
+Date: Fri, 17 Jan 2025 12:47:05 -0800
+Subject: [PATCH 1003/1004] Revert "PowerManagerService: Always instantiate
+ WaydroidHardware"
+
+This reverts commit 5386d985e69750fd5f6dd3741ec56293a705b3ef.
+---
+ .../java/com/android/server/power/PowerManagerService.java     | 3 ++-
+ 1 file changed, 2 insertions(+), 1 deletion(-)
+
+diff --git a/services/core/java/com/android/server/power/PowerManagerService.java b/services/core/java/com/android/server/power/PowerManagerService.java
+index bd177314d3c..c8bb9bf19f3 100644
+--- a/services/core/java/com/android/server/power/PowerManagerService.java
++++ b/services/core/java/com/android/server/power/PowerManagerService.java
+@@ -1041,7 +1041,8 @@ public final class PowerManagerService extends SystemService
+                 org.lineageos.platform.internal.R.dimen
+                         .config_keyboardBrightnessSettingDefaultFloat);
+ 
+-        mWaydroidHardware = Hardware.getInstance(context);
++        if (Hardware.getService() != null)
++            mWaydroidHardware = Hardware.getInstance(context);
+ 
+         synchronized (mLock) {
+             mWakeLockSuspendBlocker =
+-- 
+2.34.1
+

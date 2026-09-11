@@ -1,0 +1,26 @@
+From 20fb6e7d289dc970780f25bb7702067089e90262 Mon Sep 17 00:00:00 2001
+From: Franz-Josef Haider <frajo@frajo.fi>
+Date: Mon, 29 Dec 2025 12:39:42 +0200
+Subject: [PATCH 1/2] lepton: Fix a crash in single user mode.
+
+Change-Id: Ib8c702fa32e130195427c7ac6909d0944c7c618a
+---
+ services/core/java/com/android/server/AlarmManagerService.java | 2 +-
+ 1 file changed, 1 insertion(+), 1 deletion(-)
+
+diff --git a/services/core/java/com/android/server/AlarmManagerService.java b/services/core/java/com/android/server/AlarmManagerService.java
+index 7cbe0c8ba57..c2076e1bb40 100644
+--- a/services/core/java/com/android/server/AlarmManagerService.java
++++ b/services/core/java/com/android/server/AlarmManagerService.java
+@@ -1509,7 +1509,7 @@ class AlarmManagerService extends SystemService {
+ 
+             // We have to set current TimeZone info to kernel
+             // because kernel doesn't keep this after reboot
+-            setTimeZoneImpl(SystemProperties.get(TIMEZONE_PROPERTY));
++            //setTimeZoneImpl(SystemProperties.get(TIMEZONE_PROPERTY));
+ 
+             // Ensure that we're booting with a halfway sensible current time.  Use the
+             // most recent of Build.TIME, the root file system's timestamp, and the
+-- 
+2.52.0
+

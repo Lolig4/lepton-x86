@@ -1,0 +1,50 @@
+From 24af3cf0bf127161d8f56f5b1991a744c1b8638f Mon Sep 17 00:00:00 2001
+From: Franz-Josef Haider <frajo@frajo.fi>
+Date: Tue, 30 Jun 2026 22:52:25 +0300
+Subject: [PATCH 4/4] lepton: Use ubpf_syscall.
+
+Change-Id: I0cd3a893ae0b27500c02e16ed42c36f377a98816
+---
+ .../include/BpfSyscallWrappers.h                  | 15 +++++++++++++--
+ 1 file changed, 13 insertions(+), 2 deletions(-)
+
+diff --git a/staticlibs/native/bpf_syscall_wrappers/include/BpfSyscallWrappers.h b/staticlibs/native/bpf_syscall_wrappers/include/BpfSyscallWrappers.h
+index 9995cb9eb1..878b593ee0 100644
+--- a/staticlibs/native/bpf_syscall_wrappers/include/BpfSyscallWrappers.h
++++ b/staticlibs/native/bpf_syscall_wrappers/include/BpfSyscallWrappers.h
+@@ -19,6 +19,8 @@
+ #include <linux/bpf.h>
+ #include <linux/unistd.h>
+ 
++#include <ubpf_syscall.h>
++
+ #ifdef BPF_FD_JUST_USE_INT
+   #define BPF_FD_TYPE int
+   #define BPF_FD_TO_U32(x) static_cast<__u32>(x)
+@@ -41,12 +43,21 @@ inline uint64_t ptr_to_u64(const void * const x) {
+  */
+ 
+ inline int bpf(enum bpf_cmd cmd, const bpf_attr& attr) {
+-    return syscall(__NR_bpf, cmd, &attr, sizeof(attr));
++
++    const uint32_t *w = (const uint32_t *)&attr;
++    for (int i = 0; i < 8; i++)
++        fprintf(stderr, "BPF [%d]=0x%08x\n", i, w[i]);
++    return ubpf_syscall(cmd, const_cast<bpf_attr*>(&attr), sizeof(attr));
++    //return syscall(__NR_bpf, cmd, &attr, sizeof(attr));
+ }
+ 
+ // this version is meant for use with cmd's which mutate the argument
+ inline int bpf(enum bpf_cmd cmd, bpf_attr *attr) {
+-    return syscall(__NR_bpf, cmd, attr, sizeof(*attr));
++    const uint32_t *w = (const uint32_t *)attr;
++    for (int i = 0; i < 8; i++)
++        fprintf(stderr, "BPF [%d]=0x%08x\n", i, w[i]);
++    return ubpf_syscall(cmd, attr, sizeof(*attr));
++    //return syscall(__NR_bpf, cmd, attr, sizeof(*attr));
+ }
+ 
+ inline int createMap(bpf_map_type map_type, uint32_t key_size, uint32_t value_size,
+-- 
+2.55.0
+

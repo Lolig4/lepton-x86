@@ -1,0 +1,141 @@
+From fddf54de605ea18ab4c66f337f1d60c1c2b7871d Mon Sep 17 00:00:00 2001
+From: Alessandro Astone <ales.astone@gmail.com>
+Date: Thu, 19 Jan 2023 00:17:42 +0100
+Subject: [PATCH 10/19] surfaceflinger: Send buffer width and height to
+ IWaydroidDisplay
+
+Change-Id: Id879b6ceffc82724fb6ddce79494d8a7a6cd26e4
+---
+ services/surfaceflinger/Android.bp                   |  1 +
+ services/surfaceflinger/CompositionEngine/Android.bp |  1 +
+ .../DisplayHardware/AidlComposerHal.cpp              |  3 ++-
+ .../surfaceflinger/DisplayHardware/AidlComposerHal.h |  5 ++++-
+ .../DisplayHardware/HidlComposerHal.cpp              | 12 ++++++++++--
+ .../surfaceflinger/DisplayHardware/HidlComposerHal.h |  5 ++++-
+ 6 files changed, 22 insertions(+), 5 deletions(-)
+
+diff --git a/services/surfaceflinger/Android.bp b/services/surfaceflinger/Android.bp
+index 933c976c38..51f6c1a5ea 100644
+--- a/services/surfaceflinger/Android.bp
++++ b/services/surfaceflinger/Android.bp
+@@ -277,6 +277,7 @@ cc_binary {
+     shared_libs: [
+         "libSurfaceFlingerProp",
+         "vendor.waydroid.display@1.0",
++        "vendor.waydroid.display@1.1",
+     ],
+ 
+     logtags: ["EventLog/EventLogTags.logtags"],
+diff --git a/services/surfaceflinger/CompositionEngine/Android.bp b/services/surfaceflinger/CompositionEngine/Android.bp
+index 6f7023f90f..27e7828ea6 100644
+--- a/services/surfaceflinger/CompositionEngine/Android.bp
++++ b/services/surfaceflinger/CompositionEngine/Android.bp
+@@ -40,6 +40,7 @@ cc_defaults {
+         "libutils",
+         "server_configurable_flags",
+         "vendor.waydroid.display@1.0",
++        "vendor.waydroid.display@1.1",
+     ],
+     static_libs: [
+         "liblayers_proto",
+diff --git a/services/surfaceflinger/DisplayHardware/AidlComposerHal.cpp b/services/surfaceflinger/DisplayHardware/AidlComposerHal.cpp
+index da302367d3..e3050d6945 100644
+--- a/services/surfaceflinger/DisplayHardware/AidlComposerHal.cpp
++++ b/services/surfaceflinger/DisplayHardware/AidlComposerHal.cpp
+@@ -352,7 +352,8 @@ void AidlComposer::registerCallback(HWC2::ComposerCallback& callback) {
+         ALOGE("registerCallback failed %s", status.getDescription().c_str());
+     }
+ 
+-    mWaydroidDisplay = IWaydroidDisplay::getService();
++    mWaydroidDisplay = V1_0::IWaydroidDisplay::getService();
++    mWaydroidDisplay_1 = V1_1::IWaydroidDisplay::castFrom(mWaydroidDisplay);
+ }
+ 
+ Error AidlComposer::executeCommands(Display display) {
+diff --git a/services/surfaceflinger/DisplayHardware/AidlComposerHal.h b/services/surfaceflinger/DisplayHardware/AidlComposerHal.h
+index 9264a5a409..55b84929f8 100644
+--- a/services/surfaceflinger/DisplayHardware/AidlComposerHal.h
++++ b/services/surfaceflinger/DisplayHardware/AidlComposerHal.h
+@@ -55,6 +55,8 @@ using aidl::android::hardware::graphics::composer3::ComposerClientReader;
+ using aidl::android::hardware::graphics::composer3::ComposerClientWriter;
+ using aidl::android::hardware::graphics::composer3::OverlayProperties;
+ 
++using namespace vendor::waydroid::display;
++
+ class AidlIComposerCallbackWrapper;
+ 
+ // Composer is a wrapper to IComposer, a proxy to server-side composer.
+@@ -310,7 +312,8 @@ private:
+     std::shared_ptr<AidlIComposerClient> mAidlComposerClient;
+     std::shared_ptr<AidlIComposerCallbackWrapper> mAidlComposerCallback;
+ 
+-    sp<IWaydroidDisplay> mWaydroidDisplay;
++    sp<V1_0::IWaydroidDisplay> mWaydroidDisplay;
++    sp<V1_1::IWaydroidDisplay> mWaydroidDisplay_1;
+     std::map<Layer, int32_t> mLayersZMap;
+     std::map<int32_t, std::string> mLayersNameMap;
+     std::map<int32_t, const native_handle_t*> mLayersHandleMap;
+diff --git a/services/surfaceflinger/DisplayHardware/HidlComposerHal.cpp b/services/surfaceflinger/DisplayHardware/HidlComposerHal.cpp
+index 0761333be3..9d103089f2 100644
+--- a/services/surfaceflinger/DisplayHardware/HidlComposerHal.cpp
++++ b/services/surfaceflinger/DisplayHardware/HidlComposerHal.cpp
+@@ -310,7 +310,8 @@ void HidlComposer::registerCallback(const sp<IComposerCallback>& callback) {
+         ALOGE("failed to register IComposerCallback");
+     }
+ 
+-    mWaydroidDisplay = IWaydroidDisplay::getService();
++    mWaydroidDisplay = V1_0::IWaydroidDisplay::getService();
++    mWaydroidDisplay_1 = V1_1::IWaydroidDisplay::castFrom(mWaydroidDisplay);
+ }
+ 
+ Error HidlComposer::executeCommands(Display) {
+@@ -1428,15 +1429,22 @@ Error HidlComposer::setLayerName(Display, Layer layer, std::string name) {
+ }
+ 
+ Error HidlComposer::setLayerHandleInfo(Display, Layer layer, const sp<GraphicBuffer>& buffer) {
++    Error error;
+     if (!mWaydroidDisplay)
+         return Error::UNSUPPORTED;
+ 
+     if (buffer.get() &&
+             mLayersHandleMap[mLayersZMap[layer]] != buffer->getNativeBuffer()->handle) {
+         mLayersHandleMap[mLayersZMap[layer]] = buffer->getNativeBuffer()->handle;
+-        return mWaydroidDisplay->setLayerHandleInfo(mLayersZMap[layer],
++        error = mWaydroidDisplay->setLayerHandleInfo(mLayersZMap[layer],
+                                                     buffer->getPixelFormat(),
+                                                     buffer->getStride());
++        if (error != Error::NONE)
++            return error;
++
++        if (mWaydroidDisplay_1)
++            mWaydroidDisplay_1->setLayerSize(mLayersZMap[layer],
++                                            buffer->getWidth(), buffer->getHeight());
+     }
+     return Error::NONE;
+ }
+diff --git a/services/surfaceflinger/DisplayHardware/HidlComposerHal.h b/services/surfaceflinger/DisplayHardware/HidlComposerHal.h
+index 50b7f7efd6..824fe75c4b 100644
+--- a/services/surfaceflinger/DisplayHardware/HidlComposerHal.h
++++ b/services/surfaceflinger/DisplayHardware/HidlComposerHal.h
+@@ -42,6 +42,8 @@
+ // TODO(b/129481165): remove the #pragma below and fix conversion issues
+ #pragma clang diagnostic pop // ignored "-Wconversion -Wextra"
+ 
++using namespace vendor::waydroid::display;
++
+ namespace android::Hwc2 {
+ 
+ namespace types = hardware::graphics::common;
+@@ -390,7 +392,8 @@ private:
+     CommandWriter mWriter;
+     CommandReader mReader;
+ 
+-    sp<IWaydroidDisplay> mWaydroidDisplay;
++    sp<V1_0::IWaydroidDisplay> mWaydroidDisplay;
++    sp<V1_1::IWaydroidDisplay> mWaydroidDisplay_1;
+     std::map<Layer, int32_t> mLayersZMap;
+     std::map<int32_t, std::string> mLayersNameMap;
+     std::map<int32_t, const native_handle_t*> mLayersHandleMap;
+-- 
+2.55.0
+

@@ -1,0 +1,89 @@
+From 0f6ad219e177a66d862681202682ff4cff1fd30b Mon Sep 17 00:00:00 2001
+From: Martijn Coenen <maco@google.com>
+Date: Tue, 21 Dec 2021 12:46:41 +0100
+Subject: [PATCH 1/1] Prevent concurrent database upgrades.
+
+MediaProvider contains a seperate MediaUpdateReceiver component, which
+only runs as part of the PRE_BOOT_COMPLETED broadcast that is sent when
+an OTA has been installed. The goal of MediaUpdateReceiver is to start
+migrating the MediaProvider database as early as possible in boot,
+because otherwise apps that access the MediaProvider database might
+start ANR'ing while waiting for any database migration to happen.
+
+Unfortuntely MediaUpdateReceiver has its own instances of the
+DatabaseHelper class, on top of the regular instances in
+MediaProvider.java. This means that two threads can try to access the
+DatabaseHelper in parallel, and in turn, two threads could also have
+their onUpgrade() methods invoked in parallel. While locking might
+prevent them from running in parralel, even running them sequentially
+would result in fatal errors, because we'd recreate columns that already
+exist.
+
+To prevent us from doing the upgrade twice, keep track of upgraded
+databases in a static.
+
+Bug: 210593666
+Test: TEST_MAPPING
+Change-Id: Ib9df31ccc479346b29aad6e30de47499c9103516
+---
+ .../providers/media/DatabaseHelper.java       | 23 +++++++++++++++++++
+ 1 file changed, 23 insertions(+)
+
+diff --git a/src/com/android/providers/media/DatabaseHelper.java b/src/com/android/providers/media/DatabaseHelper.java
+index d48726b0..cffc9d3f 100644
+--- a/src/com/android/providers/media/DatabaseHelper.java
++++ b/src/com/android/providers/media/DatabaseHelper.java
+@@ -72,6 +72,7 @@ import java.lang.annotation.Annotation;
+ import java.lang.reflect.Field;
+ import java.util.ArrayList;
+ import java.util.Collection;
++import java.util.HashSet;
+ import java.util.Objects;
+ import java.util.Set;
+ import java.util.UUID;
+@@ -119,6 +120,14 @@ public class DatabaseHelper extends SQLiteOpenHelper implements AutoCloseable {
+      */
+     boolean mMigrateFromLegacy;
+ 
++    /**
++     * Unfortunately we can have multiple instances of DatabaseHelper, causing
++     * onUpgrade() to be called multiple times if those instances happen to run in
++     * parallel. To prevent that, keep track of which databases we've already upgraded.
++     *
++     */
++    static final Set<String> sDatabaseUpgraded = new HashSet<>();
++    static final Object sLock = new Object();
+     /**
+      * Lock used to guard against deadlocks in SQLite; the write lock is used to
+      * guard any schema changes, and the read lock is used for all other
+@@ -243,6 +252,11 @@ public class DatabaseHelper extends SQLiteOpenHelper implements AutoCloseable {
+ 
+     @VisibleForTesting
+     SQLiteDatabase getWritableDatabaseForTest() {
++        // Tests rely on creating multiple instances of DatabaseHelper to test upgrade
++        // scenarios; so clear this state before returning databases to test.
++        synchronized (sLock) {
++            sDatabaseUpgraded.clear();
++        }
+         return super.getWritableDatabase();
+     }
+ 
+@@ -344,6 +358,15 @@ public class DatabaseHelper extends SQLiteOpenHelper implements AutoCloseable {
+         Log.v(TAG, "onUpgrade() for " + mName + " from " + oldV + " to " + newV);
+         mSchemaLock.writeLock().lock();
+         try {
++            synchronized (sLock) {
++                if (sDatabaseUpgraded.contains(mName)) {
++                    Log.v(TAG, "Skipping onUpgrade() for " + mName +
++                            " because it was already upgraded.");
++                    return;
++                } else {
++                    sDatabaseUpgraded.add(mName);
++                }
++            }
+             updateDatabase(db, oldV, newV);
+         } finally {
+             mSchemaLock.writeLock().unlock();
+-- 
+2.54.0
+

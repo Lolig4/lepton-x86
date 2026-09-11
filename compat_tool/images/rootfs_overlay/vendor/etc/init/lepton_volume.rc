@@ -1,0 +1,4 @@
+# We can just set the setting because that will get baked into our sysbake,
+# which then will apply when we boot the next time, for actual application launch.
+on property:sys.boot_completed=1
+    exec -- /system/bin/sh /vendor/bin/lepton_set_volumes.sh

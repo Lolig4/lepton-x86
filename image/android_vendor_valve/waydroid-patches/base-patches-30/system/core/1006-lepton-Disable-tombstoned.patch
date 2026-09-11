@@ -1,0 +1,26 @@
+From 08926e6b578d078f5707bb5a715ae3c2dfd1fffc Mon Sep 17 00:00:00 2001
+From: SteamOS Waydroid Builder <waydroid-builder@steamos.cloud>
+Date: Thu, 12 Dec 2024 16:32:06 +0000
+Subject: [PATCH] lepton: Disable tombstoned
+
+Change-Id: Iecd24cf3c0d4d397e0f19b3f5e7cc3bb556d89e2
+---
+ debuggerd/tombstoned/tombstoned.rc | 5 +++--
+ 1 file changed, 3 insertions(+), 2 deletions(-)
+
+diff --git a/debuggerd/tombstoned/tombstoned.rc b/debuggerd/tombstoned/tombstoned.rc
+index b4a1e71fb..4f41395ab 100644
+--- a/debuggerd/tombstoned/tombstoned.rc
++++ b/debuggerd/tombstoned/tombstoned.rc
+@@ -7,5 +7,6 @@ service tombstoned /system/bin/tombstoned
+     socket tombstoned_java_trace seqpacket 0666 system system
+     writepid /dev/cpuset/system-background/tasks
+ 
+-on post-fs-data
+-    start tombstoned
++# Disabled for Lepton
++#on post-fs-data
++#    start tombstoned
+-- 
+2.34.1
+

@@ -1,0 +1,73 @@
+From 07e03bb6299aa5716aa59de2927bc9d830f2a284 Mon Sep 17 00:00:00 2001
+From: Erfan Abdi <erfangplus@gmail.com>
+Date: Wed, 8 Sep 2021 11:10:51 +0800
+Subject: [PATCH 05/22] base: Add TID to SurfaceView layer name
+
+Change-Id: Ic607a646287829b05e0e90501f8fa8d5ab94a6b1
+---
+ core/java/android/view/SurfaceControl.java                  | 3 +--
+ core/java/android/view/SurfaceView.java                     | 6 +++---
+ .../wm/shell/startingsurface/TaskSnapshotWindow.java        | 2 +-
+ 3 files changed, 5 insertions(+), 6 deletions(-)
+
+diff --git a/core/java/android/view/SurfaceControl.java b/core/java/android/view/SurfaceControl.java
+index eff35c0c0f03..0227fa7f9aaa 100644
+--- a/core/java/android/view/SurfaceControl.java
++++ b/core/java/android/view/SurfaceControl.java
+@@ -1699,8 +1699,7 @@ public final class SurfaceControl implements Parcelable {
+ 
+     @Override
+     public String toString() {
+-        return "Surface(name=" + mName + ")/@0x" +
+-                Integer.toHexString(System.identityHashCode(this));
++        return mName;
+     }
+ 
+     /**
+diff --git a/core/java/android/view/SurfaceView.java b/core/java/android/view/SurfaceView.java
+index d494e2811747..ef8219f8658a 100644
+--- a/core/java/android/view/SurfaceView.java
++++ b/core/java/android/view/SurfaceView.java
+@@ -1184,7 +1184,7 @@ public class SurfaceView extends View implements ViewRootImpl.SurfaceChangedCall
+                 final Transaction surfaceUpdateTransaction = new Transaction();
+                 if (creating) {
+                     updateOpaqueFlag();
+-                    final String name = "SurfaceView[" + viewRoot.getTitle().toString() + "]";
++                    final String name = viewRoot.getSurfaceControl().toString();
+                     createBlastSurfaceControls(viewRoot, name, surfaceUpdateTransaction);
+                 } else if (mSurfaceControl == null) {
+                     return;
+@@ -1447,7 +1447,7 @@ public class SurfaceView extends View implements ViewRootImpl.SurfaceChangedCall
+ 
+         if (mBlastSurfaceControl == null) {
+             mBlastSurfaceControl = new SurfaceControl.Builder(mSurfaceSession)
+-                    .setName(name + "(BLAST)")
++                    .setName(name)
+                     .setLocalOwnerView(this)
+                     .setParent(mSurfaceControl)
+                     .setFlags(mSurfaceFlags)
+@@ -1465,7 +1465,7 @@ public class SurfaceView extends View implements ViewRootImpl.SurfaceChangedCall
+ 
+         if (mBackgroundControl == null) {
+             mBackgroundControl = new SurfaceControl.Builder(mSurfaceSession)
+-                    .setName("Background for " + name)
++                    .setName(name)
+                     .setLocalOwnerView(this)
+                     .setOpaque(true)
+                     .setColorLayer()
+diff --git a/libs/WindowManager/Shell/src/com/android/wm/shell/startingsurface/TaskSnapshotWindow.java b/libs/WindowManager/Shell/src/com/android/wm/shell/startingsurface/TaskSnapshotWindow.java
+index d0307634fa93..319f15933d05 100644
+--- a/libs/WindowManager/Shell/src/com/android/wm/shell/startingsurface/TaskSnapshotWindow.java
++++ b/libs/WindowManager/Shell/src/com/android/wm/shell/startingsurface/TaskSnapshotWindow.java
+@@ -92,7 +92,7 @@ public class TaskSnapshotWindow {
+         final InsetsState topWindowInsetsState = info.topOpaqueWindowInsetsState;
+ 
+         final WindowManager.LayoutParams layoutParams = SnapshotDrawerUtils.createLayoutParameters(
+-                info, mWindow.getAttrs().packageName + TITLE_FORMAT, TYPE_APPLICATION_STARTING,
++                info, runningTaskInfo.topActivity.getPackageName() + TITLE_FORMAT + taskId, TYPE_APPLICATION_STARTING,
+                 snapshot.getHardwareBuffer().getFormat(), appToken);
+         if (layoutParams == null) {
+             Slog.e(TAG, "TaskSnapshotWindow no layoutParams");
+-- 
+2.55.0
+

@@ -1,0 +1,51 @@
+From d33ed9973ecd7dca413674457753febc1c7f95de Mon Sep 17 00:00:00 2001
+From: Elliot Saba <sabae@valvesoftware.com>
+Date: Tue, 29 Oct 2024 12:40:09 -0700
+Subject: [PATCH 1/4] Force `soong` to forward `HTTP_PROXY` and friends
+
+This allows build processes like `meson` to auto-download dependencies
+for our `mesa` build.
+
+Change-Id: I502ba697270ed90ca8202cc80924ac47a31e2bfa
+---
+ ui/build/dumpvars.go | 6 ++++++
+ ui/build/ninja.go    | 6 ++++++
+ 2 files changed, 12 insertions(+)
+
+diff --git a/ui/build/dumpvars.go b/ui/build/dumpvars.go
+index e17bd5402a..295438df3c 100644
+--- a/ui/build/dumpvars.go
++++ b/ui/build/dumpvars.go
+@@ -208,6 +208,12 @@ func runMakeProductConfig(ctx Context, config Config) {
+ 		"CCACHE_BASEDIR",
+ 		"CCACHE_CPP2",
+ 
++		// HTTP proxy variables, for when mesa needs to download e.g. lua
++		"HTTP_PROXY",
++		"HTTPS_PROXY",
++		"http_proxy",
++		"https_proxy",
++
+ 		// LLVM compiler wrapper options
+ 		"TOOLCHAIN_RUSAGE_OUTPUT",
+ 	}
+diff --git a/ui/build/ninja.go b/ui/build/ninja.go
+index 551b8ab414..0c59613eea 100644
+--- a/ui/build/ninja.go
++++ b/ui/build/ninja.go
+@@ -192,6 +192,12 @@ func runNinjaForBuild(ctx Context, config Config) {
+ 			"CCACHE_CPP2",
+ 			"CCACHE_DIR",
+ 
++			// HTTP proxy settings
++			"HTTP_PROXY",
++			"HTTPS_PROXY",
++			"http_proxy",
++			"https_proxy",
++
+ 			// LLVM compiler wrapper options
+ 			"TOOLCHAIN_RUSAGE_OUTPUT",
+ 
+-- 
+2.55.0
+

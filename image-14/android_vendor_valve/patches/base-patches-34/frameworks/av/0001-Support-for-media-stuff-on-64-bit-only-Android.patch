@@ -1,0 +1,108 @@
+From 3c362a18e01ffd2ad5c35ffecd3a229018817f78 Mon Sep 17 00:00:00 2001
+From: Joshua Ashton <joshua@froggi.es>
+Date: Mon, 15 Apr 2024 23:24:47 +0100
+Subject: [PATCH 1/2] Support for media stuff on 64-bit only Android
+
+Change-Id: I4a58d1f9df763814184b94c5963bf06382aca18e
+---
+ camera/cameraserver/Android.bp            | 2 +-
+ drm/drmserver/Android.bp                  | 2 +-
+ media/libeffects/factory/Android.bp       | 2 +-
+ media/libstagefright/omx/Android.bp       | 2 +-
+ media/libstagefright/omx/tests/Android.bp | 2 +-
+ media/mediaserver/Android.bp              | 2 +-
+ services/mediacodec/Android.bp            | 2 +-
+ 7 files changed, 7 insertions(+), 7 deletions(-)
+
+diff --git a/camera/cameraserver/Android.bp b/camera/cameraserver/Android.bp
+index 6862cb156b..f53f3bb011 100644
+--- a/camera/cameraserver/Android.bp
++++ b/camera/cameraserver/Android.bp
+@@ -51,7 +51,7 @@ cc_binary {
+     static_libs: [
+         "libcameraservice",
+     ],
+-    compile_multilib: "first",
++    compile_multilib: "64",
+     cflags: [
+         "-Wall",
+         "-Wextra",
+diff --git a/drm/drmserver/Android.bp b/drm/drmserver/Android.bp
+index 81c2003457..cc79e15b62 100644
+--- a/drm/drmserver/Android.bp
++++ b/drm/drmserver/Android.bp
+@@ -88,7 +88,7 @@ drmserver_cc_binary {
+         "-Werror",
+     ],
+ 
+-    compile_multilib: "prefer32",
++    //compile_multilib: "prefer32",
+ 
+     soong_config_variables: {
+         TARGET_DYNAMIC_64_32_DRMSERVER: {
+diff --git a/media/libeffects/factory/Android.bp b/media/libeffects/factory/Android.bp
+index ad5188fc03..aa71cadf48 100644
+--- a/media/libeffects/factory/Android.bp
++++ b/media/libeffects/factory/Android.bp
+@@ -50,7 +50,7 @@ cc_binary {
+     vendor: true,
+     srcs: ["test/DumpConfig.cpp"],
+ 
+-    compile_multilib: "32",
++    compile_multilib: "64",
+ 
+     cflags: [
+         "-Wall",
+diff --git a/media/libstagefright/omx/Android.bp b/media/libstagefright/omx/Android.bp
+index 79ab009ffb..30312dd61e 100644
+--- a/media/libstagefright/omx/Android.bp
++++ b/media/libstagefright/omx/Android.bp
+@@ -212,7 +212,7 @@ cc_defaults {
+         cfi: true,
+     },
+ 
+-    compile_multilib: "32",
++    compile_multilib: "64",
+ }
+ 
+ cc_library_shared {
+diff --git a/media/libstagefright/omx/tests/Android.bp b/media/libstagefright/omx/tests/Android.bp
+index 159fd19608..6034211808 100644
+--- a/media/libstagefright/omx/tests/Android.bp
++++ b/media/libstagefright/omx/tests/Android.bp
+@@ -50,5 +50,5 @@ cc_test {
+         "-Wall",
+     ],
+ 
+-    compile_multilib: "32",
++    compile_multilib: "64",
+ }
+diff --git a/media/mediaserver/Android.bp b/media/mediaserver/Android.bp
+index 2341af1d96..4e706ad4bb 100644
+--- a/media/mediaserver/Android.bp
++++ b/media/mediaserver/Android.bp
+@@ -78,7 +78,7 @@ mediaserver_cc_binary {
+     // TO ENABLE 64-BIT MEDIASERVER ON MIXED 32/64-BIT DEVICES, COMMENT
+     // OUT THE FOLLOWING LINE:
+     // ****************************************************************
+-    compile_multilib: "prefer32",
++    //compile_multilib: "prefer32",
+ 
+     cflags: [
+         "-Werror",
+diff --git a/services/mediacodec/Android.bp b/services/mediacodec/Android.bp
+index 506b3bca67..608898d690 100644
+--- a/services/mediacodec/Android.bp
++++ b/services/mediacodec/Android.bp
+@@ -96,7 +96,7 @@ cc_binary {
+     ],
+ 
+     // OMX interfaces force this to stay in 32-bit mode;
+-    compile_multilib: "32",
++    compile_multilib: "64",
+ 
+     init_rc: ["android.hardware.media.omx@1.0-service.rc"],
+ 
+-- 
+2.55.0
+

@@ -1,0 +1,19 @@
+[submodule "image/android_device_valve_waydroid"]
+	path = image/android_device_valve_waydroid
+	url = https://gitlab.steamos.cloud/valve/waydroid/android_device_valve_waydroid
+[submodule "image/android_hardware_waydroid"]
+	path = image/android_hardware_waydroid
+	url = https://gitlab.steamos.cloud/valve/waydroid/android_hardware_waydroid
+[submodule "image/android_vendor_waydroid"]
+	path = image/android_vendor_waydroid
+	url = https://github.com/waydroid/android_vendor_waydroid
+[submodule "image-14/android_hardware_waydroid"]
+	path = image-14/android_hardware_waydroid
+	url = https://gitlab.steamos.cloud/valve/waydroid/android_hardware_waydroid
+	branch = android-14
+[submodule "image-14/android_vendor_waydroid"]
+	path = image-14/android_vendor_waydroid
+	url = https://github.com/waydroid/android_vendor_waydroid
+[submodule "tests/android-vulkan-tutorials"]
+	path = tests/android-vulkan-tutorials
+	url = https://github.com/googlesamples/android-vulkan-tutorials

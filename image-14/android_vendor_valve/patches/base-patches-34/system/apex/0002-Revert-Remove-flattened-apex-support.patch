@@ -1,0 +1,974 @@
+From 43981f879215934712594320fc9c6912f6879d16 Mon Sep 17 00:00:00 2001
+From: Franz-Josef Haider <frajo@frajo.fi>
+Date: Mon, 22 Jun 2026 18:19:09 +0300
+Subject: [PATCH 2/3] Revert "Remove "flattened apex" support"
+
+This reverts commit 87ae5b5ff9b613878236ef825340dadbb9367c70.
+
+Change-Id: Ib250604aae21f711f2184c73069057bfa626e032
+---
+ apexd/Android.bp                           |  18 ++
+ apexd/apex_database.cpp                    |   3 +-
+ apexd/apex_file_repository.h               |   3 +
+ apexd/apexd.cpp                            | 128 +++++++++++++
+ apexd/apexd.h                              |   4 +
+ apexd/apexd_main.cpp                       |   5 +-
+ apexd/apexd_test.cpp                       | 144 ++++++++++++++
+ apexd/dump_apex_info.cpp                   | 207 +++++++++++++++++++++
+ apexd/flattened_apex_test.cpp              |  92 +++++++++
+ apexd/flattened_apex_test_config.xml       |  30 +++
+ docs/README.md                             |  43 ++++-
+ docs/howto.md                              |  40 +++-
+ libs/libapexutil/apexutil.h                |   3 +-
+ shim/build/Android.bp                      |  14 ++
+ shim/build/prebuilts_shim_allowed_list.txt |   4 +
+ tools/deapexer.py                          |   1 +
+ tools/host-apex-verifier.sh                |   6 +
+ 17 files changed, 740 insertions(+), 5 deletions(-)
+ create mode 100644 apexd/dump_apex_info.cpp
+ create mode 100644 apexd/flattened_apex_test.cpp
+ create mode 100644 apexd/flattened_apex_test_config.xml
+ create mode 100644 shim/build/prebuilts_shim_allowed_list.txt
+
+diff --git a/apexd/Android.bp b/apexd/Android.bp
+index 76c73b05..478e0404 100644
+--- a/apexd/Android.bp
++++ b/apexd/Android.bp
+@@ -650,6 +650,24 @@ cc_test {
+   test_config: "ApexServiceTestCases.xml",
+ }
+ 
++cc_test {
++  name: "flattened_apex_test",
++  defaults: [
++    "apex_flags_defaults",
++    "libapex-deps",
++    "libapexd-deps"
++  ],
++  srcs: ["flattened_apex_test.cpp"],
++  host_supported: false,
++  compile_multilib: "first",
++  static_libs: [
++    "libapex",
++    "libapexd",
++  ],
++  test_suites: ["device-tests"],
++  test_config: "flattened_apex_test_config.xml",
++}
++
+ xsd_config {
+   name: "apex-info-list",
+   srcs: ["ApexInfoList.xsd"],
+diff --git a/apexd/apex_database.cpp b/apexd/apex_database.cpp
+index 1395c13d..c9a36fe5 100644
+--- a/apexd/apex_database.cpp
++++ b/apexd/apex_database.cpp
+@@ -247,7 +247,8 @@ Result<MountedApexData> ResolveMountInfo(
+ // - /dev/block/loopX : loop device
+ // - /dev/block/dm-X : dm-verity
+ 
+-// In case of loop device, the original APEX file can be tracked
++// In case of loop device, it is from a non-flattened
++// APEX file. This original APEX file can be tracked
+ // by /sys/block/loopX/loop/backing_file.
+ 
+ // In case of dm-verity, it is mapped to a loop device.
+diff --git a/apexd/apex_file_repository.h b/apexd/apex_file_repository.h
+index 18ea84c2..bfddccf0 100644
+--- a/apexd/apex_file_repository.h
++++ b/apexd/apex_file_repository.h
+@@ -214,5 +214,8 @@ class ApexFileRepository final {
+   std::unordered_map<std::string, BlockApexOverride> block_apex_overrides_;
+ };
+ 
++std::string GetApexSelectFilenameFromProp(
++    const std::vector<std::string>& prefixes, const std::string& apex_name);
++
+ }  // namespace apex
+ }  // namespace android
+diff --git a/apexd/apexd.cpp b/apexd/apexd.cpp
+index 3d899f31..2815d87b 100644
+--- a/apexd/apexd.cpp
++++ b/apexd/apexd.cpp
+@@ -1497,6 +1497,11 @@ std::vector<ApexFile> CalculateInactivePackages(
+ }
+ 
+ Result<void> EmitApexInfoList(bool is_bootstrap) {
++  // on a non-updatable device, we don't have APEX database to emit
++  if (!android::sysprop::ApexProperties::updatable().value_or(false)) {
++    return {};
++  }
++
+   // Apexd runs both in "bootstrap" and "default" mount namespace.
+   // To expose /apex/apex-info-list.xml separately in each mount namespaces,
+   // we write /apex/.<namespace>-apex-info-list .xml file first and then
+@@ -3658,6 +3663,129 @@ int OnOtaChrootBootstrap(bool also_include_staged_apexes) {
+   return 0;
+ }
+ 
++int ActivateFlattenedApex(const std::vector<std::string>& multi_apex_prefixes) {
++  LOG(INFO) << "ActivateFlattenedApex";
++
++  std::vector<com::android::apex::ApexInfo> apex_infos;
++  std::unordered_map<std::string, std::string> apex_names;
++
++  for (const std::string& dir : gConfig->apex_built_in_dirs) {
++    LOG(INFO) << "Scanning " << dir;
++    auto dir_content = ReadDir(dir, [](const auto& entry) {
++      std::error_code ec;
++      return entry.is_directory(ec);
++    });
++
++    if (!dir_content.ok()) {
++      LOG(ERROR) << "Failed to scan " << dir << " : " << dir_content.error();
++      continue;
++    }
++
++    // Sort to make sure that /apex/apex-info-list.xml generation doesn't depend
++    // on the unstable directory scan.
++    std::vector<std::string> entries = std::move(*dir_content);
++    std::sort(entries.begin(), entries.end());
++
++    for (const std::string& apex_dir : entries) {
++      std::string manifest_file = apex_dir + "/" + kManifestFilenamePb;
++      if (access(manifest_file.c_str(), F_OK) != 0) {
++        PLOG(ERROR) << "Failed to access " << manifest_file;
++        continue;
++      }
++
++      auto manifest = ReadManifest(manifest_file);
++      if (!manifest.ok()) {
++        LOG(ERROR) << "Failed to read apex manifest from " << manifest_file
++                   << " : " << manifest.error();
++        continue;
++      }
++
++      // Support for multi-install-apex with flattened apexes works with "ro."
++      // property but not with "persist." property because "persist." properties
++      // are not loaded yet.
++      auto selected =
++          GetApexSelectFilenameFromProp(multi_apex_prefixes, manifest->name());
++      if (!selected.empty()) {
++        if (selected != android::base::Basename(apex_dir)) {
++          LOG(INFO) << "Skipping APEX at " << apex_dir << " because "
++                    << selected << " is selected for " << manifest->name();
++          continue;
++        }
++        LOG(INFO) << "Selecting APEX at " << apex_dir << " for "
++                  << manifest->name();
++      }
++
++      if (auto it = apex_names.find(manifest->name()); it != apex_names.end()) {
++        LOG(ERROR) << "Failed to activate apex from " << apex_dir
++                   << " : duplicate of " << manifest->name() << " found in "
++                   << it->second;
++        return 1;
++      }
++
++      std::string mount_point = std::string(kApexRoot) + "/" + manifest->name();
++      if (mkdir(mount_point.c_str(), 0755) != 0) {
++        PLOG(ERROR) << "Failed to mkdir " << mount_point;
++        continue;
++      }
++
++      LOG(INFO) << "Bind mounting " << apex_dir << " onto " << mount_point;
++      if (mount(apex_dir.c_str(), mount_point.c_str(), nullptr, MS_BIND,
++                nullptr) != 0) {
++        PLOG(ERROR) << "Failed to bind mount " << apex_dir << " to "
++                    << mount_point;
++        continue;
++      }
++
++      // b/179211712 the stored path should be the realpath, otherwise the path
++      // we get by scanning the directory would be different from the path we
++      // get by reading /proc/mounts, if the apex file is on a symlink dir.
++      std::string realpath;
++      if (!android::base::Realpath(apex_dir, &realpath)) {
++        PLOG(ERROR) << "can't get realpath of " << apex_dir;
++        continue;
++      }
++
++      apex_infos.emplace_back(manifest->name(), /* modulePath= */ realpath,
++                              /* preinstalledModulePath= */ realpath,
++                              /* versionCode= */ manifest->version(),
++                              /* versionName= */ manifest->versionname(),
++                              /* isFactory= */ true, /* isActive= */ true,
++                              /* lastUpdateMillis= */ 0,
++                              /* provideSharedApexLibs= */ false);
++      apex_names.emplace(manifest->name(), apex_dir);
++    }
++  }
++
++  std::string file_name = StringPrintf("%s/%s", kApexRoot, kApexInfoList);
++  unique_fd fd(TEMP_FAILURE_RETRY(
++      open(file_name.c_str(), O_WRONLY | O_CREAT | O_TRUNC | O_CLOEXEC, 0644)));
++  if (fd.get() == -1) {
++    PLOG(ERROR) << "Can't open " << file_name;
++    return 1;
++  }
++
++  std::ostringstream xml;
++  com::android::apex::ApexInfoList apex_info_list(apex_infos);
++  com::android::apex::write(xml, apex_info_list);
++  if (!android::base::WriteStringToFd(xml.str(), fd)) {
++    PLOG(ERROR) << "Can't write to " << file_name;
++    return 1;
++  }
++  fd.reset();
++
++  if (auto status = RestoreconPath(file_name); !status.ok()) {
++    LOG(ERROR) << "Failed to restorecon " << file_name << " : "
++               << status.error();
++    return 1;
++  }
++
++  return 0;
++}
++
++int ActivateFlattenedApex() {
++  return ActivateFlattenedApex(kMultiApexSelectPrefix);
++}
++
+ android::apex::MountedApexDatabase& GetApexDatabaseForTesting() {
+   return gMountedApexes;
+ }
+diff --git a/apexd/apexd.h b/apexd/apexd.h
+index 409b0e75..1ea86a25 100644
+--- a/apexd/apexd.h
++++ b/apexd/apexd.h
+@@ -213,6 +213,10 @@ int OnStartInVmMode();
+ // If `also_include_staged_apexes` is true, it's for Pre-reboot Dexopt.
+ int OnOtaChrootBootstrap(bool also_include_staged_apexes);
+ 
++// Activates flattened apexes
++int ActivateFlattenedApex();
++int ActivateFlattenedApex(const std::vector<std::string>& multi_apex_prefixes);
++
+ android::apex::MountedApexDatabase& GetApexDatabaseForTesting();
+ 
+ // Performs a non-staged install of an APEX specified by |package_path|.
+diff --git a/apexd/apexd_main.cpp b/apexd/apexd_main.cpp
+index c7d89194..c34ac4e5 100644
+--- a/apexd/apexd_main.cpp
++++ b/apexd/apexd_main.cpp
+@@ -16,6 +16,7 @@
+ 
+ #define LOG_TAG "apexd"
+ 
++#include <ApexProperties.sysprop.h>
+ #include <android-base/logging.h>
+ #include <android-base/properties.h>
+ #include <selinux/android.h>
+@@ -36,7 +37,9 @@ using android::base::SetDefaultTag;
+ int HandleSubcommand(int argc, char** argv) {
+   if (strcmp("--bootstrap", argv[1]) == 0) {
+     SetDefaultTag("apexd-bootstrap");
+-    return android::apex::OnBootstrap();
++    LOG(INFO) << "Bootstrap subcommand detected";
++    return android::apex::ActivateFlattenedApex();
++//    return android::apex::OnBootstrap();
+   }
+ 
+   if (strcmp("--unmount-all", argv[1]) == 0) {
+diff --git a/apexd/apexd_test.cpp b/apexd/apexd_test.cpp
+index fb388557..9f69cf89 100644
+--- a/apexd/apexd_test.cpp
++++ b/apexd/apexd_test.cpp
+@@ -3175,6 +3175,150 @@ TEST_F(ApexdMountTest,
+                                    ApexInfoXmlEq(apex_info_xml_2)));
+ }
+ 
++void PrepareFlattenedApex(const std::string& apex_dir,
++                          const std::string& apex_name, int version) {
++  ASSERT_EQ(mkdir(apex_dir.c_str(), 0755), 0);
++
++  ::apex::proto::ApexManifest manifest;
++  manifest.set_name(apex_name);
++  manifest.set_version(version);
++  manifest.set_versionname(std::to_string(version));
++
++  std::string out;
++  manifest.SerializeToString(&out);
++  ASSERT_TRUE(WriteStringToFile(out, apex_dir + "/apex_manifest.pb"));
++}
++
++TEST_F(ApexdMountTest, ActivateFlattenedApex) {
++  std::string apex_dir_1 = GetBuiltInDir() + "/com.android.apex.test_package";
++  std::string apex_dir_2 = GetBuiltInDir() + "/com.android.apex.test_package_2";
++  PrepareFlattenedApex(apex_dir_1, "com.android.apex.test_package", 2);
++  PrepareFlattenedApex(apex_dir_2, "com.android.apex.test_package_2", 1);
++
++  ASSERT_EQ(ActivateFlattenedApex(), 0);
++
++  auto apex_mounts = GetApexMounts();
++  ASSERT_THAT(apex_mounts,
++              UnorderedElementsAre("/apex/com.android.apex.test_package",
++                                   "/apex/com.android.apex.test_package_2"));
++
++  ASSERT_EQ(access("/apex/apex-info-list.xml", F_OK), 0);
++  ASSERT_EQ(GetSelinuxContext("/apex/apex-info-list.xml"),
++            "u:object_r:apex_info_file:s0");
++
++  auto info_list =
++      com::android::apex::readApexInfoList("/apex/apex-info-list.xml");
++  ASSERT_TRUE(info_list.has_value());
++  auto apex_info_xml_1 = com::android::apex::ApexInfo(
++      /* moduleName= */ "com.android.apex.test_package",
++      /* modulePath= */ apex_dir_1,
++      /* preinstalledModulePath= */ apex_dir_1,
++      /* versionCode= */ 2, /* versionName= */ "2",
++      /* isFactory= */ true, /* isActive= */ true,
++      /* lastUpdateMillis= */ 0,
++      /* provideSharedApexLibs= */ false);
++  auto apex_info_xml_2 = com::android::apex::ApexInfo(
++      /* moduleName= */ "com.android.apex.test_package_2",
++      /* modulePath= */ apex_dir_2,
++      /* preinstalledModulePath= */ apex_dir_2,
++      /* versionCode= */ 1, /* versionName= */ "1",
++      /* isFactory= */ true, /* isActive= */ true,
++      /* lastUpdateMillis= */ 0,
++      /* provideSharedApexLibs= */ false);
++
++  ASSERT_THAT(info_list->getApexInfo(),
++              UnorderedElementsAre(ApexInfoXmlEq(apex_info_xml_1),
++                                   ApexInfoXmlEq(apex_info_xml_2)));
++}
++
++TEST_F(ApexdMountTest, ActivateFlattenedApexShouldFailWithDuplicate) {
++  // Two flattened APEXes with the same name
++  PrepareFlattenedApex(GetBuiltInDir() + "/com.android.apex.test_package",
++                       "com.android.apex.test_package", 1);
++  PrepareFlattenedApex(GetBuiltInDir() + "/com.android.apex.test_package_2",
++                       "com.android.apex.test_package", 1);
++
++  CaptureStderr();
++  ASSERT_EQ(ActivateFlattenedApex(), 1);
++  std::string error = GetCapturedStderr();
++  ASSERT_THAT(error,
++              HasSubstr("duplicate of com.android.apex.test_package found"));
++}
++
++TEST_F(ApexdMountTest, ActivateFlattenedApexSupportsMultiApex) {
++  auto apex_dir = GetBuiltInDir() + "/com.android.apex.test_package";
++  // Two flattened APEXes with the same name
++  PrepareFlattenedApex(apex_dir, "com.android.apex.test_package", 1);
++  PrepareFlattenedApex(apex_dir + "_something_else",
++                       "com.android.apex.test_package", 1);
++
++  // With sysprop indicating multi-apex
++  std::string property_prefix = "debug.apexd.test.persistprefix.";
++  android::base::SetProperty(property_prefix + "com.android.apex.test_package",
++                             "com.android.apex.test_package");
++
++  ASSERT_EQ(ActivateFlattenedApex({property_prefix}), 0);  // Succeeds
++
++  // apex-info-list.xml should have original paths (realpaths) not symlinks
++  auto info_list =
++      com::android::apex::readApexInfoList("/apex/apex-info-list.xml");
++  ASSERT_TRUE(info_list.has_value());
++  auto apex_info = com::android::apex::ApexInfo(
++      /* moduleName= */ "com.android.apex.test_package",
++      /* modulePath= */ apex_dir,
++      /* preinstalledModulePath= */ apex_dir,
++      /* versionCode= */ 1, /* versionName= */ "1",
++      /* isFactory= */ true, /* isActive= */ true,
++      /* lastUpdateMillis= */ 0,
++      /* provideSharedApexLibs= */ false);
++  ASSERT_THAT(info_list->getApexInfo(), ElementsAre(ApexInfoXmlEq(apex_info)));
++
++  android::base::SetProperty(property_prefix + "com.android.apex.test_package",
++                             "");
++}
++
++TEST_F(ApexdMountTest, ActivateFlattenedApexShouldHaveRealPaths) {
++  // Prepare flattened apexes somewhere else
++  TemporaryDir dir;
++  auto apex_dir_1 = fmt::format("{}/apex1", dir.path);
++  auto apex_dir_2 = fmt::format("{}/apex2", dir.path);
++  PrepareFlattenedApex(apex_dir_1, "com.android.apex.test_package", 2);
++  PrepareFlattenedApex(apex_dir_2, "com.android.apex.test_package_2", 1);
++
++  // Symlink flattened apexes under builtin dir.
++  auto symlink_apex_dir1 = fmt::format("{}/apex1", GetBuiltInDir());
++  auto symlink_apex_dir2 = fmt::format("{}/apex2", GetBuiltInDir());
++  ASSERT_EQ(0, symlink(apex_dir_1.c_str(), symlink_apex_dir1.c_str()));
++  ASSERT_EQ(0, symlink(apex_dir_2.c_str(), symlink_apex_dir2.c_str()));
++
++  ASSERT_EQ(ActivateFlattenedApex(), 0);
++
++  // apex-info-list.xml should have original paths (realpaths) not symlinks
++  auto info_list =
++      com::android::apex::readApexInfoList("/apex/apex-info-list.xml");
++  ASSERT_TRUE(info_list.has_value());
++  auto apex_info_xml_1 = com::android::apex::ApexInfo(
++      /* moduleName= */ "com.android.apex.test_package",
++      /* modulePath= */ apex_dir_1,
++      /* preinstalledModulePath= */ apex_dir_1,
++      /* versionCode= */ 2, /* versionName= */ "2",
++      /* isFactory= */ true, /* isActive= */ true,
++      /* lastUpdateMillis= */ 0,
++      /* provideSharedApexLibs= */ false);
++  auto apex_info_xml_2 = com::android::apex::ApexInfo(
++      /* moduleName= */ "com.android.apex.test_package_2",
++      /* modulePath= */ apex_dir_2,
++      /* preinstalledModulePath= */ apex_dir_2,
++      /* versionCode= */ 1, /* versionName= */ "1",
++      /* isFactory= */ true, /* isActive= */ true,
++      /* lastUpdateMillis= */ 0,
++      /* provideSharedApexLibs= */ false);
++
++  ASSERT_THAT(info_list->getApexInfo(),
++              UnorderedElementsAre(ApexInfoXmlEq(apex_info_xml_1),
++                                   ApexInfoXmlEq(apex_info_xml_2)));
++}
++
+ TEST_F(ApexdMountTest, OnStartOnlyPreInstalledApexes) {
+   MockCheckpointInterface checkpoint_interface;
+   // Need to call InitializeVold before calling OnStart
+diff --git a/apexd/dump_apex_info.cpp b/apexd/dump_apex_info.cpp
+new file mode 100644
+index 00000000..c677e848
+--- /dev/null
++++ b/apexd/dump_apex_info.cpp
+@@ -0,0 +1,207 @@
++/*
++ * Copyright (C) 2022 The Android Open Source Project
++ *
++ * Licensed under the Apache License, Version 2.0 (the "License");
++ * you may not use this file except in compliance with the License.
++ * You may obtain a copy of the License at
++ *
++ *      http://www.apache.org/licenses/LICENSE-2.0
++ *
++ * Unless required by applicable law or agreed to in writing, software
++ * distributed under the License is distributed on an "AS IS" BASIS,
++ * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
++ * See the License for the specific language governing permissions and
++ * limitations under the License.
++ */
++
++#include <android-base/file.h>
++#include <android-base/logging.h>
++#include <getopt.h>
++
++#include <chrono>
++#include <string>
++
++#include "apex_constants.h"
++#include "apex_file_repository.h"
++#include "apexd_utils.h"
++#include "com_android_apex.h"
++
++using android::apex::kApexInfoList;
++using android::apex::kManifestFilenamePb;
++using android::apex::PathExists;
++using android::apex::ReadDir;
++using android::apex::ReadManifest;
++using com::android::apex::ApexInfo;
++
++void usage(const char* cmd) {
++  std::cout << "Usage: " << cmd << " --root_dir=<dir>" << std::endl;
++}
++
++std::vector<ApexInfo> LoadFlattenedApexes(const std::string& root_dir);
++
++// Create apex-info-list based on pre installed apexes
++int main(int argc, char** argv) {
++  android::base::InitLogging(argv, android::base::StdioLogger);
++  auto severity = android::base::ERROR;
++  static constexpr const char* kRootDir = "root_dir";
++
++  static struct option long_options[] = {{kRootDir, required_argument, 0, 0},
++                                         {0, 0, 0, 0}};
++
++  std::map<std::string, std::string> opts;
++  int index = 0;
++  for (;;) {
++    int c = getopt_long(argc, argv, "hv", long_options, &index);
++
++    if (c == -1) {
++      break;
++    }
++    switch (c) {
++      case 0:
++        opts[long_options[index].name] = optarg;
++        break;
++      case 'h':
++        usage(argv[0]);
++        return 0;
++      case 'v':
++        severity = android::base::VERBOSE;
++        break;
++      case '?':
++      default:
++        usage(argv[0]);
++        return -1;
++    }
++  }
++
++  if (opts.size() != 1) {
++    usage(argv[0]);
++    return -1;
++  }
++  android::base::SetMinimumLogSeverity(severity);
++  std::string root_dir;
++  if (!android::base::Realpath(opts[kRootDir], &root_dir)) {
++    LOG(ERROR) << "Failed to resolve realpath for root directory "
++               << opts[kRootDir];
++    return -1;
++  }
++
++  const std::string apex_root =
++      root_dir + std::string(::android::apex::kApexRoot);
++
++  // Ignore duplicate definitions to support multi-installed APEXes, the first
++  // found APEX package for a name is chosen.
++  const bool ignore_duplicate_definitions = true;
++  ::android::apex::ApexFileRepository repo(apex_root,
++                                           ignore_duplicate_definitions);
++
++  std::vector<std::string> prebuilt_dirs{
++      ::android::apex::kApexPackageBuiltinDirs};
++
++  // Add pre-installed apex directories
++  for (auto& dir : prebuilt_dirs) {
++    dir.insert(0, root_dir);
++  }
++
++  // Load .apex/.capex files first
++  auto ret = repo.AddPreInstalledApex(prebuilt_dirs);
++  if (!ret.ok()) {
++    LOG(ERROR) << "Failed to add pre-installed apex directories";
++    return -1;
++  }
++
++  std::vector<ApexInfo> apex_infos;
++  for (const auto& [name, files] : repo.AllApexFilesByName()) {
++    if (files.size() != 1) {
++      LOG(ERROR) << "Multiple APEXs found for " << name;
++      return -1;
++    }
++
++    const android::apex::ApexFile& apex = files[0];
++    // Remove leading path (root_dir)
++    const auto& path = apex.GetPath().substr(root_dir.length());
++    const auto& manifest = apex.GetManifest();
++    ApexInfo apex_info(manifest.name(), /* modulePath= */ path,
++                       /* preinstalledModulePath= */ path, manifest.version(),
++                       manifest.versionname(),
++                       /* isFactory= */ true, /* isActive= */ true,
++                       /*l astUpdateMillis= */ std::nullopt,
++                       manifest.providesharedapexlibs());
++    apex_infos.emplace_back(std::move(apex_info));
++  }
++
++  // As a second guess, try to load "flattened" apexes
++  if (apex_infos.empty()) {
++    apex_infos = LoadFlattenedApexes(root_dir);
++  }
++
++  std::stringstream xml;
++  com::android::apex::ApexInfoList apex_info_list(apex_infos);
++  com::android::apex::write(xml, apex_info_list);
++
++  const std::string file_name = apex_root + "/" + kApexInfoList;
++  android::base::unique_fd fd(TEMP_FAILURE_RETRY(
++      open(file_name.c_str(), O_WRONLY | O_CREAT | O_TRUNC | O_CLOEXEC, 0644)));
++
++  if (fd.get() == -1) {
++    PLOG(ERROR) << "Can't create " << file_name;
++    return -1;
++  }
++
++  if (!android::base::WriteStringToFd(xml.str(), fd)) {
++    PLOG(ERROR) << "Can't write to " << file_name;
++    return -1;
++  }
++
++  return 0;
++}
++
++std::vector<ApexInfo> LoadFlattenedApexes(const std::string& root_dir) {
++  std::vector<ApexInfo> apex_infos;
++
++  for (const std::string& dir : ::android::apex::kApexPackageBuiltinDirs) {
++    if (auto res = PathExists(root_dir + dir); !res.ok() || !*res) {
++      continue;
++    }
++
++    auto dir_content = ReadDir(root_dir + dir, [](const auto& entry) {
++      std::error_code ec;
++      return entry.is_directory(ec);
++    });
++
++    if (!dir_content.ok()) {
++      LOG(ERROR) << "Failed to scan " << dir << " : " << dir_content.error();
++      continue;
++    }
++
++    // Sort to make sure that /apex/apex-info-list.xml generation doesn't depend
++    // on the unstable directory scan.
++    std::vector<std::string> entries = std::move(*dir_content);
++    std::sort(entries.begin(), entries.end());
++
++    for (const std::string& apex_dir : entries) {
++      std::string manifest_file = apex_dir + "/" + kManifestFilenamePb;
++      if (access(manifest_file.c_str(), F_OK) != 0) {
++        PLOG(ERROR) << "Failed to access " << manifest_file;
++        continue;
++      }
++
++      auto manifest = ReadManifest(manifest_file);
++      if (!manifest.ok()) {
++        LOG(ERROR) << "Failed to read apex manifest from " << manifest_file
++                   << " : " << manifest.error();
++        continue;
++      }
++
++      // Remove leading path (root_dir)
++      const auto& path = apex_dir.substr(root_dir.length());
++      apex_infos.emplace_back(manifest->name(), /* modulePath= */ path,
++                              /* preinstalledModulePath= */ path,
++                              /* versionCode= */ manifest->version(),
++                              /* versionName= */ manifest->versionname(),
++                              /* isFactory= */ true, /* isActive= */ true,
++                              /* lastUpdateMillis= */ 0,
++                              /* provideSharedApexLibs= */ false);
++    }
++  }
++  return apex_infos;
++}
+diff --git a/apexd/flattened_apex_test.cpp b/apexd/flattened_apex_test.cpp
+new file mode 100644
+index 00000000..c2deddda
+--- /dev/null
++++ b/apexd/flattened_apex_test.cpp
+@@ -0,0 +1,92 @@
++/*
++ * Copyright (C) 2019 The Android Open Source Project
++ *
++ * Licensed under the Apache License, Version 2.0 (the "License");
++ * you may not use this file except in compliance with the License.
++ * You may obtain a copy of the License at
++ *
++ *      http://www.apache.org/licenses/LICENSE-2.0
++ *
++ * Unless required by applicable law or agreed to in writing, software
++ * distributed under the License is distributed on an "AS IS" BASIS,
++ * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
++ * See the License for the specific language governing permissions and
++ * limitations under the License.
++ */
++
++#include <android-base/file.h>
++#include <android-base/logging.h>
++#include <android-base/strings.h>
++
++#include <gtest/gtest.h>
++#include <filesystem>
++#include <memory>
++
++#include <ApexProperties.sysprop.h>
++#include "apex_constants.h"
++#include "apex_shim.h"
++#include "apexd_utils.h"
++#include "string_log.h"
++
++namespace android {
++namespace apex {
++
++TEST(FlattenedApexTest, SysPropIsFalse) {
++  bool value = android::sysprop::ApexProperties::updatable().value_or(false);
++  ASSERT_FALSE(value);
++}
++
++TEST(FlattenedApexTest, ApexFilesAreFlattened) {
++  namespace fs = std::filesystem;
++  auto assert_is_dir = [&](const fs::directory_entry& entry) {
++    if (entry.path().filename() == shim::kSystemShimApexName) {
++      return;
++    }
++    std::error_code ec;
++    bool is_dir = entry.is_directory(ec);
++    ASSERT_FALSE(ec) << ec.message();
++    ASSERT_TRUE(is_dir) << entry.path() << " is not a directory";
++  };
++  WalkDir(kApexPackageSystemDir, assert_is_dir);
++}
++
++TEST(FlattenedApexTest, MountsAreCorrect) {
++  using android::base::ReadFileToString;
++  using android::base::Split;
++  std::string mounts;
++  ASSERT_TRUE(ReadFileToString("/proc/self/mountinfo", &mounts));
++  bool has_apex_mount = false;
++  for (const auto& mount : Split(mounts, "\n")) {
++    const std::vector<std::string>& tokens = Split(mount, " ");
++    // line format:
++    // mnt_id parent_mnt_id major:minor source target option propagation_type
++    if (tokens.size() < 7) {
++      continue;
++    }
++    const std::string& source = tokens[3];
++    const std::string& target = tokens[4];
++    if (source == kApexPackageSystemDir && target == "/apex") {
++      has_apex_mount = true;
++    }
++  }
++  ASSERT_TRUE(has_apex_mount) << "Failed to find apex mount point";
++}
++
++TEST(FlattenedApexTest, ApexdIsNotRunning) {
++  constexpr const char* kCmd = "pidof -s apexd";
++  std::unique_ptr<FILE, int (*)(FILE*)> pipe(popen(kCmd, "r"), pclose);
++  ASSERT_NE(nullptr, pipe) << "Failed to open pipe for: " << kCmd;
++  char buf[1024];
++  if (fgets(buf, 1024, pipe.get()) != nullptr) {
++    FAIL() << "apexd is running and has pid " << buf;
++  }
++}
++
++}  // namespace apex
++}  // namespace android
++
++int main(int argc, char** argv) {
++  ::testing::InitGoogleTest(&argc, argv);
++  android::base::InitLogging(argv, &android::base::StderrLogger);
++  return RUN_ALL_TESTS();
++}
+diff --git a/apexd/flattened_apex_test_config.xml b/apexd/flattened_apex_test_config.xml
+new file mode 100644
+index 00000000..f50d1fe6
+--- /dev/null
++++ b/apexd/flattened_apex_test_config.xml
+@@ -0,0 +1,30 @@
++<?xml version="1.0" encoding="utf-8"?>
++<!-- Copyright (C) 2019 The Android Open Source Project
++
++     Licensed under the Apache License, Version 2.0 (the "License");
++     you may not use this file except in compliance with the License.
++     You may obtain a copy of the License at
++
++          http://www.apache.org/licenses/LICENSE-2.0
++
++     Unless required by applicable law or agreed to in writing, software
++     distributed under the License is distributed on an "AS IS" BASIS,
++     WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
++     See the License for the specific language governing permissions and
++     limitations under the License.
++-->
++<configuration description="Runs flattened_apex_test.">
++    <option name="test-suite-tag" value="apct" />
++    <option name="test-suite-tag" value="apct-native" />
++    <target_preparer class="com.android.tradefed.targetprep.PushFilePreparer">
++        <option name="cleanup" value="true" />
++        <option name="push" value="flattened_apex_test->/data/local/tmp/flattened_apex_test" />
++    </target_preparer>
++
++    <target_preparer class="com.android.tradefed.targetprep.RootTargetPreparer" />
++
++    <test class="com.android.tradefed.testtype.GTest" >
++        <option name="native-test-device-path" value="/data/local/tmp" />
++        <option name="module-name" value="flattened_apex_test" />
++    </test>
++</configuration>
+diff --git a/docs/README.md b/docs/README.md
+index a43245af..241516a0 100644
+--- a/docs/README.md
++++ b/docs/README.md
+@@ -484,7 +484,18 @@ start is delayed until the activation of the APEXs is complete.
+ 
+ ## Configuring system to support APEX updates
+ 
+-Inherit `updatable_apex.mk`.
++Set the following system property to `true` to support APEX file updates.
++
++```
++<device.mk>:
++
++PRODUCT_PROPERTY_OVERRIDES += ro.apex.updatable=true
++
++BoardConfig.mk:
++TARGET_FLATTEN_APEX := false
++```
++
++or just
+ 
+ ```
+ <device.mk>:
+@@ -492,6 +503,36 @@ Inherit `updatable_apex.mk`.
+ $(call inherit-product, $(SRC_TARGET_DIR)/product/updatable_apex.mk)
+ ```
+ 
++## Flattened APEX
++
++For legacy devices, it is sometimes impossible or infeasible to update the old
++kernel to fully support APEX. For example, the kernel might have been built
++without `CONFIG_BLK_DEV_LOOP=Y`, which is crucial for mounting the file system
++image inside an APEX.
++
++Flattened APEX is a specially built APEX that can be activated on devices with a
++legacy kernel. Files in a flattened APEX are directly installed to a directory
++under the built-in partition. For example, `lib/libFoo.so` in a flattend APEX
++`my.apex` is installed to `/system/apex/my.apex/lib/libFoo.so`.
++
++Activating a flattened APEX doesn't involve the loop device. The entire
++directory `/system/apex/my.apex` is directly bind-mounted to `/apex/name@ver`.
++
++Flattened APEXs can't be updated by downloading updated versions of the APEXs
++from network because the downloaded APEXs can't be flattened. Flattened APEXs
++can be updated only via a regular OTA.
++
++Note that flattened APEX is the default configuration for now. This means all
++APEXes are by default flattened unless you explicitly configure your device to
++support updatable APEX (explained above).
++
++Also note that, mixing flattened and non-flattened APEXes in a device is NOT
++supported. It should be either all non-flattened or all flattened. This is
++especially important when shipping pre-signed APEX prebuilts for the projects
++like Mainline. APEXes that are not pre-signed (i.e. built from the source)
++should also be non-flattened and signed with proper keys in that case. The
++device should inherit from `updatable_apex.mk` as explained above.
++
+ ## Compressed apexes {#compressed-apex}
+ 
+ APEX compression is a new feature introduced in Android S. Its main purpose is
+diff --git a/docs/howto.md b/docs/howto.md
+index 853f9760..1c0b4c44 100644
+--- a/docs/howto.md
++++ b/docs/howto.md
+@@ -414,14 +414,52 @@ activated, the start is delayed until the activation of APEXes is finished.
+ 
+ ## Configuring system to support APEX updates
+ 
+-Inherit `updatable_apex.mk`.
++Set the following system property to true to support APEX file updates.
+ 
+ ```
+ <device.mk>:
+ 
++PRODUCT_PROPERTY_OVERRIDES += ro.apex.updatable=true
++
++BoardConfig.mk:
++TARGET_FLATTEN_APEX := false
++
++or just
++<device.mk>:
++
+ $(call inherit-product, $(SRC_TARGET_DIR)/product/updatable_apex.mk)
+ ```
+ 
++## Flattened APEX
++
++For legacy devices, it is sometimes impossible or infeasible to update the old
++kernel to fully support APEX. For example, the kernel might have been built
++without `CONFIG_BLK_DEV_LOOP=Y`, which is crucial for mounting the file system
++image inside an APEX.
++
++Flattened APEX is a specially built APEX that can be activated on devices with a
++legacy kernel. Files in a flattened APEX are directly installed to a directory
++under the built-in partition. For example, `lib/libFoo.so` in a flattened APEX
++my.apex is installed to `/system/apex/my.apex/lib/libFoo.so`.
++
++Activating a flattened APEX doesn't involve the loop device. The entire
++directory `/system/apex/my.apex` is directly bind-mounted to `/apex/name@ver`.
++
++Flattened APEXs can‘t be updated by downloading updated versions of the APEXs
++from network because the downloaded APEXs can’t be flattened. Flattened APEXs
++can be updated only via a regular OTA.
++
++Note that flattened APEX is the default configuration for now (2019/Aug). This
++means all APEXes are by default flattened unless you explicitly configure your
++device to support updatable APEX (explained above).
++
++Also note that, mixing flattened and non-flattened APEXes in a device is NOT
++supported. It should be either all non-flattened or all flattened. This is
++especially important when shipping pre-signed APEX prebuilts for the projects
++like Mainline. APEXes that are not pre-signed (i.e. built from the source)
++should also be non-flattened and signed with proper keys in that case. The
++device should inherit from `updatable_apex.mk` as explained above.
++
+ ## Building APEX without Soong
+ 
+ An APEX can be built without relying on the build commands generated by Soong.
+diff --git a/libs/libapexutil/apexutil.h b/libs/libapexutil/apexutil.h
+index 0e8a8a4f..f3512948 100644
+--- a/libs/libapexutil/apexutil.h
++++ b/libs/libapexutil/apexutil.h
+@@ -24,7 +24,8 @@ namespace android {
+ namespace apex {
+ 
+ // Returns active APEX packages as a map of path(e.g. /apex/com.android.foo) to
+-// ApexManifest. This is very similar to ApexService::getActivePackages.
++// ApexManifest. This is very similar to ApexService::getActivePackages, but it
++// doesn't rely on whether APEXes are flattened or not.
+ // For testing purpose, it accepts the apex root path which is defined by
+ // kApexRoot constant.
+ std::map<std::string, ::apex::proto::ApexManifest>
+diff --git a/shim/build/Android.bp b/shim/build/Android.bp
+index 9b40add4..11631eeb 100644
+--- a/shim/build/Android.bp
++++ b/shim/build/Android.bp
+@@ -299,6 +299,20 @@ apex {
+   updatable: false,
+ }
+ 
++// This is to install the flattened version of com.android.apex.cts.shim.
++// Because com.android.apex.cts.shim is provided as prebuilt and the build system
++// doesn't support install "flattened" version from "prebult" yet, GSI, which should
++// have both "flatttened" and "unflattened" APEXes, is missing the flattened version
++// of com.android.apex.cts.shim.
++// TODO(b/159426728):  When the build system can install "flattened" from "prebuilts",
++// this can be removed.
++override_apex {
++  name: "com.android.apex.cts.shim.v1_with_prebuilts",
++  base: "com.android.apex.cts.shim.v1",
++  apps: ["CtsShimPrebuilt", "CtsShimPrivPrebuilt"],
++  allowed_files: "prebuilts_shim_allowed_list.txt",
++}
++
+ genrule {
+   name: "com.android.apex.cts.shim_not_pre_installed.pem",
+   out: ["com.android.apex.cts.shim_not_pre_installed.pem"],
+diff --git a/shim/build/prebuilts_shim_allowed_list.txt b/shim/build/prebuilts_shim_allowed_list.txt
+new file mode 100644
+index 00000000..7da513ff
+--- /dev/null
++++ b/shim/build/prebuilts_shim_allowed_list.txt
+@@ -0,0 +1,4 @@
++./apex_manifest.pb
++./app/CtsShimPrebuilt/CtsShimPrebuilt.apk
++./etc/hash.txt
++./priv-app/CtsShimPrivPrebuilt/CtsShimPrivPrebuilt.apk
+diff --git a/tools/deapexer.py b/tools/deapexer.py
+index 6821465a..1068aaa5 100755
+--- a/tools/deapexer.py
++++ b/tools/deapexer.py
+@@ -164,6 +164,7 @@ class Apex(object):
+     self._fsckerofs = args.fsckerofs_path
+     self._apex = args.apex
+     self._tempdir = tempfile.mkdtemp()
++    # TODO(b/139125405): support flattened APEXes.
+     with zipfile.ZipFile(self._apex, 'r') as zip_ref:
+       self._payload = zip_ref.extract('apex_payload.img', path=self._tempdir)
+     self._payload_fs_type = RetrieveFileSystemType(self._payload)
+diff --git a/tools/host-apex-verifier.sh b/tools/host-apex-verifier.sh
+index 1114aaa6..e7327581 100755
+--- a/tools/host-apex-verifier.sh
++++ b/tools/host-apex-verifier.sh
+@@ -1,6 +1,12 @@
+ #!/bin/bash
+ set -x
+ 
++APEX_UPDATABLE="`adb shell getprop ro.apex.updatable`"
++if [[ $APEX_UPDATABLE != "true" ]]; then
++  echo "Skipping this test: device uses flattened APEXes."
++  exit 0;
++fi
++
+ echo "Pulling APEXes from the device factory APEX directories."
+ TEMP_DIR="`mktemp -d`"
+ adb pull /system/apex/ $TEMP_DIR/system
+-- 
+2.55.0
+

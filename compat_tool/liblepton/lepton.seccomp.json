@@ -1,0 +1,54 @@
+{
+  "defaultAction": "SCMP_ACT_ALLOW",
+  "archMap": [
+    {
+      "architecture": "SCMP_ARCH_AARCH64"
+    }
+  ],
+  "syscalls": [
+    {
+      "names": ["open_by_handle_at"],
+      "action": "SCMP_ACT_ERRNO",
+      "errnoRet": 38
+    },
+    {
+      "names": [
+        "adjtimex",
+        "clock_adjtime",
+        "clock_adjtime64",
+        "clock_settime",
+        "clock_settime64",
+        "settimeofday",
+        "stime",
+        "add_key",
+        "keyctl",
+        "request_key",
+        "swapoff",
+        "swapon",
+        "setpriority",
+        "nice",
+        "chown",
+        "fchown",
+        "fchownat",
+        "lchown",
+        "setuid",
+        "setgid",
+        "setgroups"
+      ],
+      "action": "SCMP_ACT_ERRNO",
+      "errnoRet": 0
+    },
+    {
+      "names": [
+        "init_module",
+        "finit_module",
+        "delete_module",
+        "_sysctl",
+        "kexec_file_load",
+        "kexec_load",
+        "reboot"
+      ],
+      "action": "SCMP_ACT_ERRNO"
+    }
+  ]
+}

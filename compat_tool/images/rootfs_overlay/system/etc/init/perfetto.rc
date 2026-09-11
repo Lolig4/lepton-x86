@@ -1,0 +1,3 @@
+# Purposefully empty; we don't want any perfetto running in the container
+# We could ship this as a part of the rootfs, but perfetto is often a
+# tool that we need to change the configuration of quickly, so this is easier.

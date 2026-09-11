@@ -1,0 +1,45 @@
+From 3e51a991029eef8176fd4ad64cb5a42b25ec4e32 Mon Sep 17 00:00:00 2001
+From: Franz-Josef Haider <frajo@frajo.fi>
+Date: Tue, 11 Aug 2026 09:37:53 +0300
+Subject: [PATCH 1/1] lepton: Intercept VIEW intent for URIs and forward it to
+ steam.
+
+Change-Id: Id06e7ed0d014d9d18115c9c6b2b18b2eca2aab20
+---
+ .../android/server/wm/ActivityStarter.java    | 20 +++++++++++++++++++
+ 1 file changed, 20 insertions(+)
+
+diff --git a/services/core/java/com/android/server/wm/ActivityStarter.java b/services/core/java/com/android/server/wm/ActivityStarter.java
+index 6ad056f5a902..50db6d36b43e 100644
+--- a/services/core/java/com/android/server/wm/ActivityStarter.java
++++ b/services/core/java/com/android/server/wm/ActivityStarter.java
+@@ -716,6 +716,26 @@ class ActivityStarter {
+         try {
+             onExecutionStarted();
+ 
++            if (mRequest.intent != null
++                    && Intent.ACTION_VIEW.equals(mRequest.intent.getAction())) {
++                final android.net.Uri uri = mRequest.intent.getData();
++
++                if (uri != null) {
++                    Slog.i(TAG, "Intercepted VIEW: " + uri);
++
++                    final String url = uri.toString();
++
++                    try (java.io.FileWriter writer = new java.io.FileWriter("/lepton/steam.pipe", true)) {
++                        writer.write("steam://openurl/" + url);
++                        writer.write("\n");
++                    } catch (java.io.IOException e) {
++                        Slog.e(TAG, "Failed to write VIEW URL", e);
++                    }
++                }
++
++                return START_SUCCESS;
++            }
++
+             if (mRequest.intent != null) {
+                 // Refuse possible leaked file descriptors
+                 if (mRequest.intent.hasFileDescriptors()) {
+-- 
+2.55.0
+

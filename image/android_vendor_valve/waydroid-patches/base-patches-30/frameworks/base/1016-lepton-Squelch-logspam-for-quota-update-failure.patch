@@ -1,0 +1,34 @@
+From 7f3d26f7b77d5ce0447786452f63c2e61ff445f4 Mon Sep 17 00:00:00 2001
+From: Elliot Saba <sabae@valvesoftware.com>
+Date: Mon, 20 Jan 2025 11:38:26 -0800
+Subject: [PATCH] lepton: Squelch logspam for quota update failure
+
+Change-Id: I1dfa6895c69ac5ab3f299bd61881d9f611619a13
+---
+ core/java/android/os/storage/StorageManager.java | 3 +++
+ 1 file changed, 3 insertions(+)
+
+diff --git a/core/java/android/os/storage/StorageManager.java b/core/java/android/os/storage/StorageManager.java
+index 0abf8ae352a..c7a48211d63 100644
+--- a/core/java/android/os/storage/StorageManager.java
++++ b/core/java/android/os/storage/StorageManager.java
+@@ -2479,6 +2479,8 @@ public class StorageManager {
+         long projectId;
+         final String filePath = path.getCanonicalPath();
+         final StorageVolume volume = getStorageVolume(path);
++
++        /* Lepton: We don't care about quotas, and this fills up our logcat with useless errors.
+         if (volume == null) {
+             Log.w(TAG, "Failed to update quota type for " + filePath);
+             return;
+@@ -2511,6 +2513,7 @@ public class StorageManager {
+         if (!setQuotaProjectId(filePath, projectId)) {
+             throw new IOException("Failed to update quota type for " + filePath);
+         }
++        */
+     }
+ 
+     /**
+-- 
+2.34.1
+

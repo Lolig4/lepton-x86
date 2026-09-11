@@ -1,0 +1,27 @@
+From 664d6d68e7413792b0db3261c6c20e20079dce4a Mon Sep 17 00:00:00 2001
+From: Franz-Josef Haider <frajo@frajo.fi>
+Date: Thu, 26 Feb 2026 21:52:07 +0200
+Subject: [PATCH 16/22] Revert "[BACKPORT] Verify UID of incoming Zygote
+ connections."
+
+This reverts commit 17a67f51161d760283756010386b763aaa56d37e.
+---
+ core/java/com/android/internal/os/ZygoteConnection.java | 2 +-
+ 1 file changed, 1 insertion(+), 1 deletion(-)
+
+diff --git a/core/java/com/android/internal/os/ZygoteConnection.java b/core/java/com/android/internal/os/ZygoteConnection.java
+index d4dcec948e31..69e42cb4ace5 100644
+--- a/core/java/com/android/internal/os/ZygoteConnection.java
++++ b/core/java/com/android/internal/os/ZygoteConnection.java
+@@ -251,7 +251,7 @@ class ZygoteConnection {
+                 }
+ 
+                 if (parsedArgs.mInvokeWith != null || parsedArgs.mStartChildZygote
+-                        || !multipleOK || peer.getUid() != Process.SYSTEM_UID) {
++                        || !multipleOK/* || peer.getUid() != Process.SYSTEM_UID*/) {
+                     // Continue using old code for now. TODO: Handle these cases in the other path.
+                     pid = Zygote.forkAndSpecialize(parsedArgs.mUid, parsedArgs.mGid,
+                             parsedArgs.mGids, parsedArgs.mRuntimeFlags, rlimits,
+-- 
+2.55.0
+

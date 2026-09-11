@@ -1,0 +1,25 @@
+From b5963fb5eaf9292e0bb3e3f45c0f09d8e56ad19f Mon Sep 17 00:00:00 2001
+From: Franz-Josef Haider <frajo@frajo.fi>
+Date: Mon, 22 Jun 2026 18:00:54 +0300
+Subject: [PATCH 2/2] Revert "Do not pass TARGET_FLATTEN_APEX to soong"
+
+This reverts commit 6d273b962460ab1f01c1e1b2ce362efd401a1bfa.
+---
+ core/soong_config.mk | 1 +
+ 1 file changed, 1 insertion(+)
+
+diff --git a/core/soong_config.mk b/core/soong_config.mk
+index b43a9526fc..93d123bfa3 100644
+--- a/core/soong_config.mk
++++ b/core/soong_config.mk
+@@ -232,6 +232,7 @@ $(call add_json_str,  ProductSepolicyPrebuiltApiDir,     $(BOARD_PRODUCT_PREBUIL
+ $(call add_json_str,  PlatformSepolicyVersion,           $(PLATFORM_SEPOLICY_VERSION))
+ $(call add_json_list, PlatformSepolicyCompatVersions,    $(PLATFORM_SEPOLICY_COMPAT_VERSIONS))
+ 
++$(call add_json_bool, Flatten_apex,                      $(filter true,$(TARGET_FLATTEN_APEX)))
+ $(call add_json_bool, ForceApexSymlinkOptimization,      $(filter true,$(TARGET_FORCE_APEX_SYMLINK_OPTIMIZATION)))
+ 
+ $(call add_json_str,  DexpreoptGlobalConfig,             $(DEX_PREOPT_CONFIG))
+-- 
+2.55.0
+

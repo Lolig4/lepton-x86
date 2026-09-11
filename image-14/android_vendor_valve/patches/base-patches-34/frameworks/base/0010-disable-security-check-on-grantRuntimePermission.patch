@@ -1,0 +1,144 @@
+From e08e8d573db8d2074fbd12981e3971b209e44046 Mon Sep 17 00:00:00 2001
+From: Jeremy Selan <jeremys@valvesoftware.com>
+Date: Tue, 2 Apr 2024 17:19:32 -0700
+Subject: [PATCH 10/22] disable security check on grantRuntimePermission
+
+This allows all permissions to be settable via command-line (or API), even those that
+traditionally require user intervention like MANAGE_EXTERNAL_STORAGE.
+
+Change-Id: I51a2268611b6c8125ffd986fb78b38bf51f3d99f
+---
+ .../PermissionManagerServiceImpl.java         |  4 +
+ .../access/permission/PermissionService.kt    | 80 +++++++++----------
+ 2 files changed, 44 insertions(+), 40 deletions(-)
+
+diff --git a/services/core/java/com/android/server/pm/permission/PermissionManagerServiceImpl.java b/services/core/java/com/android/server/pm/permission/PermissionManagerServiceImpl.java
+index cd1d7996fbac..ce0a78b696db 100644
+--- a/services/core/java/com/android/server/pm/permission/PermissionManagerServiceImpl.java
++++ b/services/core/java/com/android/server/pm/permission/PermissionManagerServiceImpl.java
+@@ -1387,6 +1387,7 @@ public class PermissionManagerServiceImpl implements PermissionManagerServiceInt
+ 
+             isRuntimePermission = bp.isRuntime();
+             permissionHasGids = bp.hasGids();
++            /*
+             if (isRuntimePermission || bp.isDevelopment()) {
+                 // Good.
+             } else if (bp.isRole()) {
+@@ -1397,6 +1398,7 @@ public class PermissionManagerServiceImpl implements PermissionManagerServiceInt
+                 throw new SecurityException("Permission " + permName + " requested by "
+                         + pkg.getPackageName() + " is not a changeable permission type");
+             }
++            */
+ 
+             final UidPermissionState uidState = getUidStateLocked(pkg, userId);
+             if (uidState == null) {
+@@ -1574,6 +1576,7 @@ public class PermissionManagerServiceImpl implements PermissionManagerServiceInt
+             }
+ 
+             isRuntimePermission = bp.isRuntime();
++            /*
+             if (isRuntimePermission || bp.isDevelopment()) {
+                 // Good.
+             } else if (bp.isRole()) {
+@@ -1584,6 +1587,7 @@ public class PermissionManagerServiceImpl implements PermissionManagerServiceInt
+                 throw new SecurityException("Permission " + permName + " requested by "
+                         + pkg.getPackageName() + " is not a changeable permission type");
+             }
++            */
+ 
+             final UidPermissionState uidState = getUidStateLocked(pkg, userId);
+             if (uidState == null) {
+diff --git a/services/permission/java/com/android/server/permission/access/permission/PermissionService.kt b/services/permission/java/com/android/server/permission/access/permission/PermissionService.kt
+index 0704c8ffca25..33d666039486 100644
+--- a/services/permission/java/com/android/server/permission/access/permission/PermissionService.kt
++++ b/services/permission/java/com/android/server/permission/access/permission/PermissionService.kt
+@@ -918,46 +918,46 @@ class PermissionService(private val service: AccessCheckingService) :
+ 
+         val androidPackage = packageState.androidPackage!!
+         val packageName = packageState.packageName
+-        when {
+-            permission.isDevelopment -> {}
+-            permission.isRole -> {
+-                if (!canManageRolePermission) {
+-                    if (reportError) {
+-                        throw SecurityException("Permission $permissionName is managed by role")
+-                    }
+-                    return
+-                }
+-            }
+-            permission.isRuntime -> {
+-                if (androidPackage.targetSdkVersion < Build.VERSION_CODES.M) {
+-                    // If a permission review is required for legacy apps we represent
+-                    // their permissions as always granted
+-                    return
+-                }
+-                if (
+-                    isGranted &&
+-                        packageState.getUserStateOrDefault(userId).isInstantApp &&
+-                        !permission.isInstant
+-                ) {
+-                    if (reportError) {
+-                        throw SecurityException(
+-                            "Cannot grant non-instant permission $permissionName to package" +
+-                                " $packageName"
+-                        )
+-                    }
+-                    return
+-                }
+-            }
+-            else -> {
+-                if (reportError) {
+-                    throw SecurityException(
+-                        "Permission $permissionName requested by package $packageName is not a" +
+-                            " changeable permission type"
+-                    )
+-                }
+-                return
+-            }
+-        }
++//        when {
++//            permission.isDevelopment -> {}
++//            permission.isRole -> {
++//                if (!canManageRolePermission) {
++//                    if (reportError) {
++//                        throw SecurityException("Permission $permissionName is managed by role")
++//                    }
++//                    return
++//                }
++//            }
++//            permission.isRuntime -> {
++//                if (androidPackage.targetSdkVersion < Build.VERSION_CODES.M) {
++//                    // If a permission review is required for legacy apps we represent
++//                    // their permissions as always granted
++//                    return
++//                }
++//                if (
++//                    isGranted &&
++//                        packageState.getUserStateOrDefault(userId).isInstantApp &&
++//                        !permission.isInstant
++//                ) {
++//                    if (reportError) {
++//                        throw SecurityException(
++//                            "Cannot grant non-instant permission $permissionName to package" +
++//                                " $packageName"
++//                        )
++//                    }
++//                    return
++//                }
++//            }
++//            else -> {
++//                if (reportError) {
++//                    throw SecurityException(
++//                        "Permission $permissionName requested by package $packageName is not a" +
++//                            " changeable permission type"
++//                    )
++//                }
++//                return
++//            }
++//        }
+ 
+         val appId = packageState.appId
+         val oldFlags = getPermissionFlagsWithPolicy(appId, userId, permissionName, deviceId)
+-- 
+2.55.0
+

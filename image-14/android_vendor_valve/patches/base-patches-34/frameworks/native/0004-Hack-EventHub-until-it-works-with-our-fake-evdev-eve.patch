@@ -1,0 +1,330 @@
+From dcb3a188473f58204978183250c25e23fd624b7b Mon Sep 17 00:00:00 2001
+From: Tomeu Vizoso <tomeu.vizoso@collabora.com>
+Date: Wed, 24 Oct 2018 08:23:52 +0200
+Subject: [PATCH 04/19] Hack EventHub until it works with our fake evdev events
+
+---
+ services/inputflinger/reader/EventHub.cpp     | 172 +++++++++++++++++-
+ .../inputflinger/reader/include/EventHub.h    |  12 ++
+ 2 files changed, 175 insertions(+), 9 deletions(-)
+
+diff --git a/services/inputflinger/reader/EventHub.cpp b/services/inputflinger/reader/EventHub.cpp
+index 3ca691efba..9dddcd5d8a 100644
+--- a/services/inputflinger/reader/EventHub.cpp
++++ b/services/inputflinger/reader/EventHub.cpp
+@@ -66,6 +66,8 @@
+ 
+ using android::base::StringPrintf;
+ 
++#define set_bit(bit, array)    array.set(bit)
++
+ namespace android {
+ 
+ using namespace ftl::flag_operators;
+@@ -619,30 +621,81 @@ void EventHub::Device::configureFd() {
+ }
+ 
+ void EventHub::Device::readDeviceState() {
++#if 0
+     if (readDeviceBitMask(EVIOCGKEY(0), keyState) < 0) {
+         ALOGD("Unable to query the global key state for %s: %s", path.c_str(), strerror(errno));
+     }
+     if (readDeviceBitMask(EVIOCGSW(0), swState) < 0) {
+         ALOGD("Unable to query the global switch state for %s: %s", path.c_str(), strerror(errno));
+     }
++#endif
+ 
+     // Read absolute axis info and values for all available axes for the device.
+     populateAbsoluteAxisStates();
+ }
+ 
+ void EventHub::Device::populateAbsoluteAxisStates() {
++    char property[PROPERTY_VALUE_MAX];
++    int width = 0;
++    int height = 0;
++
+     absState.clear();
+ 
+     for (int axis = 0; axis <= ABS_MAX; axis++) {
+         if (!absBitmask.test(axis)) {
+             continue;
+         }
++
+         struct input_absinfo info {};
++#if 0
+         if (ioctl(fd, EVIOCGABS(axis), &info)) {
+             ALOGE("Error reading absolute controller %d for device %s fd %d: %s", axis,
+                   identifier.name.c_str(), fd, strerror(errno));
+             continue;
+         }
++#endif
++        if (property_get("waydroid.display_width", property, nullptr) > 0) {
++            width = atoi(property);
++        }
++
++        if (property_get("waydroid.display_height", property, nullptr) > 0) {
++            height = atoi(property);
++        }
++
++        info.minimum = 0;
++
++        switch(axis) {
++        case ABS_MT_POSITION_X:
++        case ABS_X:
++            info.maximum = width;
++            break;
++        case ABS_MT_POSITION_Y:
++        case ABS_Y:
++            info.maximum = height;
++            break;
++        case ABS_MT_SLOT:
++            info.maximum = 9;
++            break;
++        case ABS_PRESSURE:
++        case ABS_MT_PRESSURE:
++            info.maximum = 255;
++            break;
++        case ABS_MT_TRACKING_ID:
++            info.maximum = 65535;
++            break;
++        case ABS_MT_TOUCH_MAJOR:
++        case ABS_MT_TOUCH_MINOR:
++            info.maximum = 15;
++            break;
++        case ABS_MT_ORIENTATION:
++            info.maximum = 1;
++            break;
++        }
++
++        info.flat = 0;
++        info.fuzz = 0;
++        info.resolution = 1;
++
+         auto& [axisInfo, value] = absState[axis];
+         axisInfo.valid = true;
+         axisInfo.minValue = info.minimum;
+@@ -880,6 +933,8 @@ static void ensureProcessCanBlockSuspend() {
+ 
+ const int EventHub::EPOLL_MAX_EVENTS;
+ 
++#define INPUT_PIPE_NAME "/dev/input/wayland_events"
++
+ EventHub::EventHub(void)
+       : mBuiltInKeyboardId(NO_BUILT_IN_KEYBOARD),
+         mNextDeviceId(1),
+@@ -895,6 +950,8 @@ EventHub::EventHub(void)
+     mEpollFd = epoll_create1(EPOLL_CLOEXEC);
+     LOG_ALWAYS_FATAL_IF(mEpollFd < 0, "Could not create epoll instance: %s", strerror(errno));
+ 
++    mkfifo(INPUT_PIPE_NAME, 0777);
++
+     mINotifyFd = inotify_init1(IN_CLOEXEC);
+     LOG_ALWAYS_FATAL_IF(mINotifyFd < 0, "Could not create inotify instance: %s", strerror(errno));
+ 
+@@ -999,15 +1056,20 @@ std::optional<PropertyMap> EventHub::getConfiguration(int32_t deviceId) const {
+ 
+ status_t EventHub::getAbsoluteAxisInfo(int32_t deviceId, int axis,
+                                        RawAbsoluteAxisInfo* outAxisInfo) const {
+-    outAxisInfo->clear();
++    char property[PROPERTY_VALUE_MAX];
++    int width = 0;
++    int height = 0;
++
++    outAxisInfo->clear(); 
+     if (axis < 0 || axis > ABS_MAX) {
+-        return NAME_NOT_FOUND;
+-    }
+-    std::scoped_lock _l(mLock);
++        return NAME_NOT_FOUND; 
++    } 
++    std::scoped_lock _l(mLock); 
+     const Device* device = getDeviceLocked(deviceId);
+     if (device == nullptr) {
+         return NAME_NOT_FOUND;
+     }
++
+     // We can read the RawAbsoluteAxisInfo even if the device is disabled and doesn't have a valid
+     // fd, because the info is populated once when the device is first opened, and it doesn't change
+     // throughout the device lifecycle.
+@@ -1015,7 +1077,69 @@ status_t EventHub::getAbsoluteAxisInfo(int32_t deviceId, int axis,
+     if (it == device->absState.end()) {
+         return NAME_NOT_FOUND;
+     }
++
++    struct input_absinfo info;
++
+     *outAxisInfo = it->second.info;
++
++    info.minimum = outAxisInfo->minValue;
++    info.maximum = outAxisInfo->maxValue;
++    info.flat = outAxisInfo->flat;
++    info.fuzz = outAxisInfo->fuzz;
++    info.resolution = outAxisInfo->resolution;
++
++    if (property_get("waydroid.display_width", property, nullptr) > 0) {
++        width = atoi(property);
++    }
++
++    if (property_get("waydroid.display_height", property, nullptr) > 0) {
++        height = atoi(property);
++    }
++
++    info.minimum = 0;
++
++    switch(axis) {
++    case ABS_MT_POSITION_X:
++    case ABS_X:
++        info.maximum = width;
++        break;
++    case ABS_MT_POSITION_Y:
++    case ABS_Y:
++        info.maximum = height;
++        break;
++    case ABS_MT_SLOT:
++        info.maximum = 9;
++        break;
++    case ABS_PRESSURE:
++    case ABS_MT_PRESSURE:
++        info.maximum = 255;
++        break;
++    case ABS_MT_TRACKING_ID:
++        info.maximum = 65535;
++        break;
++    case ABS_MT_TOUCH_MAJOR:
++    case ABS_MT_TOUCH_MINOR:
++        info.maximum = 15;
++        break;
++    case ABS_MT_ORIENTATION:
++        info.maximum = 1;
++        break;
++    }
++
++    info.flat = 0;
++    info.fuzz = 0;
++    info.resolution = 1;
++
++    if (info.minimum != info.maximum) {
++        outAxisInfo->valid = true;
++        outAxisInfo->minValue = info.minimum;
++        outAxisInfo->maxValue = info.maximum;
++        outAxisInfo->flat = info.flat;
++        outAxisInfo->fuzz = info.fuzz;
++        outAxisInfo->resolution = info.resolution;
++        return OK;
++    }
++
+     return OK;
+ }
+ 
+@@ -1150,6 +1274,9 @@ status_t EventHub::getAbsoluteAxisValue(int32_t deviceId, int32_t axis, int32_t*
+ base::Result<std::vector<int32_t>> EventHub::getMtSlotValues(int32_t deviceId, int32_t axis,
+                                                              size_t slotCount) const {
+     std::scoped_lock _l(mLock);
++    char property[PROPERTY_VALUE_MAX];
++    int width = 0;
++    int height = 0;
+     const Device* device = getDeviceLocked(deviceId);
+     if (device == nullptr || !device->hasValidFd() || !device->absBitmask.test(axis)) {
+         return base::ResultError("device problem or axis not supported", NAME_NOT_FOUND);
+@@ -2252,7 +2379,7 @@ void EventHub::openDeviceLocked(const std::string& devicePath) {
+         }
+     }
+ 
+-    char buffer[80];
++    //char buffer[80];
+ 
+     ALOGV("Opening device: %s", devicePath.c_str());
+ 
+@@ -2263,7 +2390,14 @@ void EventHub::openDeviceLocked(const std::string& devicePath) {
+     }
+ 
+     InputDeviceIdentifier identifier;
+-
++    identifier.name = "wayland";
++    identifier.bus = BUS_VIRTUAL;
++    identifier.product = 1;
++    identifier.vendor = 1;
++    identifier.version = 1;
++    identifier.location = "wayland";
++    identifier.uniqueId = "wayland";
++#if 0
+     // Get device name.
+     if (ioctl(fd, EVIOCGNAME(sizeof(buffer) - 1), &buffer) < 1) {
+         ALOGE("Could not get device name for %s: %s", devicePath.c_str(), strerror(errno));
+@@ -2328,7 +2462,7 @@ void EventHub::openDeviceLocked(const std::string& devicePath) {
+             c = ::toupper(c);
+         }
+     }
+-
++#endif
+     // Fill in the descriptor.
+     assignDescriptorLocked(identifier);
+ 
+@@ -2348,12 +2482,13 @@ void EventHub::openDeviceLocked(const std::string& devicePath) {
+     ALOGV("  location:   \"%s\"\n", identifier.location.c_str());
+     ALOGV("  unique id:  \"%s\"\n", identifier.uniqueId.c_str());
+     ALOGV("  descriptor: \"%s\"\n", identifier.descriptor.c_str());
+-    ALOGV("  driver:     v%d.%d.%d\n", driverVersion >> 16, (driverVersion >> 8) & 0xff,
+-          driverVersion & 0xff);
++    //ALOGV("  driver:     v%d.%d.%d\n", driverVersion >> 16, (driverVersion >> 8) & 0xff,
++    //      driverVersion & 0xff);
+ 
+     // Load the configuration file for the device.
+     device->loadConfigurationLocked();
+ 
++#if 0
+     // Figure out the kinds of events the device reports.
+     device->readDeviceBitMask(EVIOCGBIT(EV_KEY, 0), device->keyBitmask);
+     device->readDeviceBitMask(EVIOCGBIT(EV_ABS, 0), device->absBitmask);
+@@ -2518,6 +2653,25 @@ void EventHub::openDeviceLocked(const std::string& devicePath) {
+     if (device->associatedDevice && !device->associatedDevice->lightInfos.empty()) {
+         device->classes |= InputDeviceClass::LIGHT;
+     }
++#endif
++
++    device->classes |= INPUT_DEVICE_CLASS_TOUCH_MT;
++
++    //device->propBitmask = 0;
++    set_bit(INPUT_PROP_DIRECT, device->propBitmask);
++
++    set_bit(ABS_MT_POSITION_X, device->absBitmask);
++    set_bit(ABS_MT_POSITION_Y, device->absBitmask);
++    set_bit(ABS_MT_TOUCH_MAJOR, device->absBitmask);
++    set_bit(ABS_MT_TOUCH_MINOR, device->absBitmask);
++    set_bit(ABS_MT_ORIENTATION, device->absBitmask);
++    set_bit(ABS_MT_TRACKING_ID, device->absBitmask);
++    set_bit(ABS_MT_PRESSURE, device->absBitmask);
++    set_bit(ABS_MT_SLOT, device->absBitmask);
++
++    set_bit(ABS_X, device->absBitmask);
++    set_bit(ABS_Y, device->absBitmask);
++    set_bit(ABS_PRESSURE, device->absBitmask);
+ 
+     // Determine whether the device has a mic.
+     if (device->deviceHasMicLocked()) {
+diff --git a/services/inputflinger/reader/include/EventHub.h b/services/inputflinger/reader/include/EventHub.h
+index a7e06756d0..c5b4aefeef 100644
+--- a/services/inputflinger/reader/include/EventHub.h
++++ b/services/inputflinger/reader/include/EventHub.h
+@@ -490,6 +490,18 @@ public:
+         return dmp.empty() ? "<none>" : dmp;
+     }
+ 
++    void set(std::size_t bit) {
++        if (bit >= BITS) {
++            ALOGE("Bit index out of range: %zu (max %zu)", bit, BITS);
++            return;
++        }
++
++        const std::size_t elem = bit / WIDTH;
++        const std::size_t offset = bit % WIDTH;
++
++        mData[elem].set(offset);
++    }
++
+ private:
+     std::array<std::bitset<WIDTH>, COUNT> mData;
+ };
+-- 
+2.55.0
+

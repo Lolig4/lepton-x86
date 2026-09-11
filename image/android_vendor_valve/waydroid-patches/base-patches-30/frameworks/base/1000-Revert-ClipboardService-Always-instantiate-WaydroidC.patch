@@ -1,0 +1,46 @@
+From 0af4aec2b7e8defe27c78c7f31a0b8b119a3ad66 Mon Sep 17 00:00:00 2001
+From: Elliot Saba <sabae@valvesoftware.com>
+Date: Fri, 17 Jan 2025 12:41:45 -0800
+Subject: [PATCH 1020/1021] Revert "ClipboardService: Always instantiate
+ WaydroidClipboard"
+
+This reverts commit 54d2d0f1b866bd0dfca850ad9a9544167fc59090.
+---
+ .../com/android/server/clipboard/ClipboardService.java     | 7 ++++---
+ 1 file changed, 4 insertions(+), 3 deletions(-)
+
+diff --git a/services/core/java/com/android/server/clipboard/ClipboardService.java b/services/core/java/com/android/server/clipboard/ClipboardService.java
+index 283a944fe23..f50d6c87a99 100644
+--- a/services/core/java/com/android/server/clipboard/ClipboardService.java
++++ b/services/core/java/com/android/server/clipboard/ClipboardService.java
+@@ -214,7 +214,8 @@ public class ClipboardService extends SystemService {
+             mHostMonitorThread.start();
+         }
+ 
+-        mWaydroidClipboard = Clipboard.getInstance(context);
++        if (Clipboard.getService() != null)
++            mWaydroidClipboard = Clipboard.getInstance(context);
+     }
+ 
+     @Override
+@@ -399,7 +400,7 @@ public class ClipboardService extends SystemService {
+                     return null;
+                 }
+                 addActiveOwnerLocked(intendingUid, pkg);
+-                if (mWaydroidClipboard != null && mWaydroidClipboard.getService() != null) {
++                if (mWaydroidClipboard != null) {
+                     String waydroidPaste = mWaydroidClipboard.getClipboardData();
+                     ClipData clip =
+                         new ClipData("host clipboard",
+@@ -438,7 +439,7 @@ public class ClipboardService extends SystemService {
+                         || isDeviceLocked(intendingUserId)) {
+                     return false;
+                 }
+-                if (mWaydroidClipboard != null && mWaydroidClipboard.getService() != null) {
++                if (mWaydroidClipboard != null) {
+                     String waydroidPaste = mWaydroidClipboard.getClipboardData();
+                     return !waydroidPaste.isEmpty();
+                 }
+-- 
+2.34.1
+

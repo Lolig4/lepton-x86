@@ -1,0 +1,42 @@
+From d486afc8b43e403b398a87fa2b55bb02a234cea8 Mon Sep 17 00:00:00 2001
+From: Franz-Josef Haider <frajo@frajo.fi>
+Date: Thu, 25 Jun 2026 23:15:23 +0300
+Subject: [PATCH 21/22] lepton: Disable fs verity checks.
+
+Change-Id: I6a6fe9eb2dfdc9a5891c47c28d357212da02cca3
+---
+ core/java/com/android/internal/security/VerityUtils.java | 4 ++++
+ 1 file changed, 4 insertions(+)
+
+diff --git a/core/java/com/android/internal/security/VerityUtils.java b/core/java/com/android/internal/security/VerityUtils.java
+index 7f7ea8b28546..577aaf27c599 100644
+--- a/core/java/com/android/internal/security/VerityUtils.java
++++ b/core/java/com/android/internal/security/VerityUtils.java
+@@ -79,20 +79,24 @@ public abstract class VerityUtils {
+ 
+     /** Enables fs-verity for the file without signature. */
+     public static void setUpFsverity(@NonNull String filePath) throws IOException {
++        /*
+         int errno = enableFsverityNative(filePath);
+         if (errno != 0) {
+             throw new IOException("Failed to enable fs-verity on " + filePath + ": "
+                     + Os.strerror(errno));
+         }
++        */
+     }
+ 
+     /** Enables fs-verity for an open file without signature. */
+     public static void setUpFsverity(int fd) throws IOException {
++        /*
+         int errno = enableFsverityForFdNative(fd);
+         if (errno != 0) {
+             throw new IOException("Failed to enable fs-verity on FD(" + fd + "): "
+                     + Os.strerror(errno));
+         }
++        */
+     }
+ 
+     /** Returns whether the file has fs-verity enabled. */
+-- 
+2.55.0
+

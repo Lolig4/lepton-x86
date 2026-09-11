@@ -1,0 +1,24 @@
+From e3616938378bd15afd60f1ffd621fdbaba36b1fb Mon Sep 17 00:00:00 2001
+From: Elliot Saba <sabae@valvesoftware.com>
+Date: Tue, 29 Oct 2024 13:09:04 -0700
+Subject: [PATCH] Disable `CarSystemUI` from being built
+
+Change-Id: I83909b84d2de8ca61ae1ff928bac4b48d43f4dfe
+---
+ packages/CarSystemUI/{Android.bp => Android.bp.disabled}       | 0
+ packages/CarSystemUI/tests/{Android.mk => Android.mk.disabled} | 0
+ 2 files changed, 0 insertions(+), 0 deletions(-)
+ rename packages/CarSystemUI/{Android.bp => Android.bp.disabled} (100%)
+ rename packages/CarSystemUI/tests/{Android.mk => Android.mk.disabled} (100%)
+
+diff --git a/packages/CarSystemUI/Android.bp b/packages/CarSystemUI/Android.bp.disabled
+similarity index 100%
+rename from packages/CarSystemUI/Android.bp
+rename to packages/CarSystemUI/Android.bp.disabled
+diff --git a/packages/CarSystemUI/tests/Android.mk b/packages/CarSystemUI/tests/Android.mk.disabled
+similarity index 100%
+rename from packages/CarSystemUI/tests/Android.mk
+rename to packages/CarSystemUI/tests/Android.mk.disabled
+-- 
+2.34.1
+

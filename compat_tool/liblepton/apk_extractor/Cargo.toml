@@ -1,0 +1,16 @@
+[package]
+name = "apk-info-extractor"
+version = "0.1.0"
+edition = "2021"
+
+[dependencies]
+zip = "0.6"
+axmldecoder = "0.5.0"
+quick-xml = "0.31.0"
+clap = "4.5.41"
+
+# Try to make this as small on disk as possible
+[profile.release]
+lto = true
+opt-level = "z"
+strip = true

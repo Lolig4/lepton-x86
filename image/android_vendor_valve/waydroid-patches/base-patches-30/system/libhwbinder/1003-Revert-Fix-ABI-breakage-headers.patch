@@ -1,0 +1,76 @@
+From 72d1418673ab40242d624eedd3459ceef8f727a9 Mon Sep 17 00:00:00 2001
+From: Franz-Josef Haider <frajo@frajo.fi>
+Date: Tue, 30 Jun 2026 20:20:07 +0300
+Subject: [PATCH 3/7] Revert "Fix ABI breakage headers"
+
+This reverts commit 12f774d5157449bc6d3ade01a248258f13aa7559.
+---
+ IPCThreadState.cpp                | 5 -----
+ ProcessState.cpp                  | 5 -----
+ include/hwbinder/IPCThreadState.h | 3 +--
+ include/hwbinder/ProcessState.h   | 3 +--
+ 4 files changed, 2 insertions(+), 14 deletions(-)
+
+diff --git a/IPCThreadState.cpp b/IPCThreadState.cpp
+index 4068299..fe55530 100644
+--- a/IPCThreadState.cpp
++++ b/IPCThreadState.cpp
+@@ -282,11 +282,6 @@ static pthread_key_t gHostTLS = 0;
+ static std::atomic<bool> gShutdown = false;
+ static std::atomic<bool> gHostShutdown = false;
+ 
+-IPCThreadState* IPCThreadState::self()
+-{
+-    return IPCThreadState::self(false);
+-}
+-
+ IPCThreadState* IPCThreadState::self(bool isHost)
+ {
+     if (isHost) {
+diff --git a/ProcessState.cpp b/ProcessState.cpp
+index 1a0c885..ba9c97c 100644
+--- a/ProcessState.cpp
++++ b/ProcessState.cpp
+@@ -65,11 +65,6 @@ protected:
+     const bool mIsMain;
+ };
+ 
+-sp<ProcessState> ProcessState::self()
+-{
+-    return ProcessState::self(false);
+-}
+-
+ sp<ProcessState> ProcessState::self(bool isHost)
+ {
+     Mutex::Autolock _l(gProcessMutex);
+diff --git a/include/hwbinder/IPCThreadState.h b/include/hwbinder/IPCThreadState.h
+index da817f0..708b27a 100644
+--- a/include/hwbinder/IPCThreadState.h
++++ b/include/hwbinder/IPCThreadState.h
+@@ -36,8 +36,7 @@ namespace hardware {
+ class IPCThreadState
+ {
+ public:
+-    static  IPCThreadState*     self();
+-    static  IPCThreadState*     self(bool isHost);
++    static  IPCThreadState*     self(bool isHost=false);
+     static  IPCThreadState*     selfOrNull(bool isHost=false);  // self(), but won't instantiate
+     static  IPCThreadState*     selfForHost();
+ 
+diff --git a/include/hwbinder/ProcessState.h b/include/hwbinder/ProcessState.h
+index 3b9f51b..33ff593 100644
+--- a/include/hwbinder/ProcessState.h
++++ b/include/hwbinder/ProcessState.h
+@@ -35,8 +35,7 @@ class IPCThreadState;
+ class ProcessState : public virtual RefBase
+ {
+ public:
+-    static  sp<ProcessState>    self();
+-    static  sp<ProcessState>    self(bool isHost);
++    static  sp<ProcessState>    self(bool isHost=false);
+     static  sp<ProcessState>    selfOrNull(bool isHost=false);
+     // Note: don't call self() or selfOrNull() before initWithMmapSize()
+     static  sp<ProcessState>    initWithMmapSize(size_t mmapSize, bool isHost=false); // size in bytes
+-- 
+2.54.0
+

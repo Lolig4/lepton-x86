@@ -1,0 +1,102 @@
+From 66ec79f0d1043672037a1cd9325c8496706b65a4 Mon Sep 17 00:00:00 2001
+From: Franz-Josef Haider <frajo@frajo.fi>
+Date: Mon, 25 May 2026 14:58:30 +0300
+Subject: [PATCH 17/22] Disable selinux relabling in Zygote.
+
+Change-Id: Ifb563f3b39b6f3421a9790c67d3ceba83af63c77
+---
+ core/jni/com_android_internal_os_Zygote.cpp | 28 ++++++++++-----------
+ 1 file changed, 14 insertions(+), 14 deletions(-)
+
+diff --git a/core/jni/com_android_internal_os_Zygote.cpp b/core/jni/com_android_internal_os_Zygote.cpp
+index 5238a09bfd7e..96c27731eb75 100644
+--- a/core/jni/com_android_internal_os_Zygote.cpp
++++ b/core/jni/com_android_internal_os_Zygote.cpp
+@@ -1202,7 +1202,7 @@ static void relabelSubdirs(const char* path, const char* context, fail_fn_t fail
+     if (strcmp(ent->d_name, ".") == 0 || strcmp(ent->d_name, "..") == 0) continue;
+     auto filePath = StringPrintf("%s/%s", path, ent->d_name);
+     if (ent->d_type == DT_DIR) {
+-      relabelDir(filePath.c_str(), context, fail_fn);
++      //relabelDir(filePath.c_str(), context, fail_fn);
+     } else if (ent->d_type == DT_LNK) {
+       if (lsetfilecon(filePath.c_str(), context) != 0) {
+         fail_fn(CREATE_ERROR("Failed to lsetfilecon %s %s", filePath.c_str(), strerror(errno)));
+@@ -1395,17 +1395,17 @@ static void isolateAppData(JNIEnv* env, const std::vector<std::string>& merged_d
+   /*relabelSubdirs(internalCePath, dataFileContext, fail_fn);*/
+ 
+   // Relabel /data/user
+-  relabelDir(internalCePath, dataUserdirContext, fail_fn);
++  //relabelDir(internalCePath, dataUserdirContext, fail_fn);
+ 
+   // Relabel /data/data
+-  relabelDir(internalLegacyCePath, dataFileContext, fail_fn);
++  //relabelDir(internalLegacyCePath, dataFileContext, fail_fn);
+ 
+   // Disabled in Lepton
+   // Relabel subdirectories of /data/user_de
+   /*relabelSubdirs(internalDePath, dataFileContext, fail_fn);*/
+ 
+   // Relabel /data/user_de
+-  relabelDir(internalDePath, dataUserdirContext, fail_fn);
++  //relabelDir(internalDePath, dataUserdirContext, fail_fn);
+ 
+   // Relabel CE and DE dirs under /mnt/expand
+   dir = opendir(externalPrivateMountPath);
+@@ -1420,10 +1420,10 @@ static void isolateAppData(JNIEnv* env, const std::vector<std::string>& merged_d
+ 
+     // Disabled in Lepton
+     /*relabelSubdirs(cePath.c_str(), dataFileContext, fail_fn);*/
+-    relabelDir(cePath.c_str(), dataUserdirContext, fail_fn);
++    //relabelDir(cePath.c_str(), dataUserdirContext, fail_fn);
+     // Disabled in Lepton
+     /*relabelSubdirs(dePath.c_str(), dataFileContext, fail_fn);*/
+-    relabelDir(dePath.c_str(), dataUserdirContext, fail_fn);
++    //relabelDir(dePath.c_str(), dataUserdirContext, fail_fn);
+   }
+   closedir(dir);
+ 
+@@ -1552,8 +1552,8 @@ static void isolateSdkSandboxData(JNIEnv* env, jobjectArray pkg_data_info_list,
+         createAndMountAppData(packageName, packageName, mirrorCeSandboxPath, ceSandboxPath, fail_fn,
+                               true /*call_fail_fn*/);
+ 
+-        relabelDir(ceSandboxPath, sandboxContext, fail_fn);
+-        relabelDir(ceUserPath, userContext, fail_fn);
++        //relabelDir(ceSandboxPath, sandboxContext, fail_fn);
++        //relabelDir(ceUserPath, userContext, fail_fn);
+     }
+     if (bindMountDeSandboxDataDirs) {
+         PrepareDir(deUserPath, DEFAULT_DATA_DIR_PERMISSION, AID_ROOT, AID_ROOT, fail_fn);
+@@ -1561,15 +1561,15 @@ static void isolateSdkSandboxData(JNIEnv* env, jobjectArray pkg_data_info_list,
+         createAndMountAppData(packageName, packageName, mirrorDeSandboxPath, deSandboxPath, fail_fn,
+                               true /*call_fail_fn*/);
+ 
+-        relabelDir(deSandboxPath, sandboxContext, fail_fn);
+-        relabelDir(deUserPath, userContext, fail_fn);
++        //relabelDir(deSandboxPath, sandboxContext, fail_fn);
++        //relabelDir(deUserPath, userContext, fail_fn);
+     }
+ 
+     // We set the label AFTER everything is done, as we are applying
+     // the file operations on tmpfs. If we set the label when we mount
+     // tmpfs, SELinux will not happy as we are changing system_data_files.
+-    relabelDir(internalCePath, context, fail_fn);
+-    relabelDir(internalDePath, context, fail_fn);
++    //relabelDir(internalCePath, context, fail_fn);
++    //relabelDir(internalDePath, context, fail_fn);
+ 
+     // Relabel CE and DE dirs under /mnt/expand
+     dir = opendir(externalPrivateMountPath);
+@@ -1581,8 +1581,8 @@ static void isolateSdkSandboxData(JNIEnv* env, jobjectArray pkg_data_info_list,
+         auto volPath = StringPrintf("%s/%s", externalPrivateMountPath, ent->d_name);
+         auto externalCePath = StringPrintf("%s/misc_ce", volPath.c_str());
+         auto externalDePath = StringPrintf("%s/misc_de", volPath.c_str());
+-        relabelDir(externalCePath.c_str(), context, fail_fn);
+-        relabelDir(externalDePath.c_str(), context, fail_fn);
++        //relabelDir(externalCePath.c_str(), context, fail_fn);
++        //relabelDir(externalDePath.c_str(), context, fail_fn);
+     }
+     closedir(dir);
+ 
+-- 
+2.55.0
+

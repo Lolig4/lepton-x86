@@ -1,0 +1,602 @@
+From 4d97749887f8dff13489729c5d6d3633ee11f3fe Mon Sep 17 00:00:00 2001
+From: Franz-Josef Haider <frajo@frajo.fi>
+Date: Mon, 6 Jul 2026 12:04:29 +0300
+Subject: [PATCH 1/1] lepton: enhance backtraces using debuginfod.
+
+Change-Id: If0d4732f7a2a7bc10959b2ed2ed71a481ad66bd1
+---
+ debuggerd/Android.bp                          |   2 +-
+ debuggerd/crash_dump.cpp                      |   2 +-
+ debuggerd/libdebuggerd/utility.cpp            |  72 +++++---
+ debuggerd/tombstoned/tombstoned.cpp           |   2 +-
+ libunwindstack/Android.bp                     |  40 +++-
+ libunwindstack/Unwinder.cpp                   | 144 ++++++++++++++-
+ libunwindstack/debuginfod_client.h            | 173 ++++++++++++++++++
+ libunwindstack/include/unwindstack/Unwinder.h |   4 +-
+ 8 files changed, 401 insertions(+), 38 deletions(-)
+ create mode 100644 libunwindstack/debuginfod_client.h
+
+diff --git a/debuggerd/Android.bp b/debuggerd/Android.bp
+index c7bd1a83b..44010c8e1 100644
+--- a/debuggerd/Android.bp
++++ b/debuggerd/Android.bp
+@@ -315,7 +315,7 @@ cc_binary {
+         "libbase",
+         "liblog",
+         "libprocinfo",
+-        "libunwindstack",
++        "libunwindstack_debuginfod",
+     ],
+ }
+ 
+diff --git a/debuggerd/crash_dump.cpp b/debuggerd/crash_dump.cpp
+index 3e998802b..ae99e0249 100644
+--- a/debuggerd/crash_dump.cpp
++++ b/debuggerd/crash_dump.cpp
+@@ -437,7 +437,7 @@ int main(int argc, char** argv) {
+   //
+   // Note: processes with many threads and minidebug-info can take a bit to
+   //       unwind, do not make this too small. b/62828735
+-  alarm(30);
++  //alarm(30);
+ 
+   // Get the process name (aka cmdline).
+   std::string process_name = get_process_name(g_target_thread);
+diff --git a/debuggerd/libdebuggerd/utility.cpp b/debuggerd/libdebuggerd/utility.cpp
+index 0a1d2a4da..559d53f3f 100644
+--- a/debuggerd/libdebuggerd/utility.cpp
++++ b/debuggerd/libdebuggerd/utility.cpp
+@@ -88,36 +88,50 @@ void _VLOG(log_t* log, enum logtype ltype, const char* fmt, va_list ap) {
+ 
+   if (msg.empty()) return;
+ 
+-  if (write_to_tombstone) {
+-    TEMP_FAILURE_RETRY(write(log->tfd, msg.c_str(), msg.size()));
+-  }
++  if (write_to_logcat || write_to_tombstone) {
++    std::string msg2 = msg;
+ 
+-  if (write_to_logcat) {
+-    __android_log_buf_write(LOG_ID_CRASH, ANDROID_LOG_FATAL, LOG_TAG, msg.c_str());
+-    if (log->amfd_data != nullptr) {
+-      *log->amfd_data += msg;
++    if (msg.back() == '\n') {
++      msg.back() = '\0';
+     }
+ 
+-    if (write_to_kmsg) {
+-      unique_fd kmsg_fd(open("/dev/kmsg_debug", O_WRONLY | O_APPEND | O_CLOEXEC));
+-      if (kmsg_fd.get() >= 0) {
+-        // Our output might contain newlines which would otherwise be handled by the android logger.
+-        // Split the lines up ourselves before sending to the kernel logger.
+-        if (msg.back() == '\n') {
+-          msg.back() = '\0';
+-        }
++    std::vector<std::string> fragments = android::base::Split(msg, "\n");
++    for (const std::string& fragment : fragments) {
++      if (write_to_tombstone) {
++        TEMP_FAILURE_RETRY(write(log->tfd, (fragment + "\n").c_str(), fragment.size() + 1));
++      }
++      if (write_to_logcat) {
++        __android_log_buf_write(LOG_ID_CRASH, ANDROID_LOG_FATAL, LOG_TAG, fragment.c_str());
++      }
++    }
+ 
+-        std::vector<std::string> fragments = android::base::Split(msg, "\n");
+-        for (const std::string& fragment : fragments) {
+-          static constexpr char prefix[] = "<3>DEBUG: ";
+-          struct iovec iov[3];
+-          iov[0].iov_base = const_cast<char*>(prefix);
+-          iov[0].iov_len = strlen(prefix);
+-          iov[1].iov_base = const_cast<char*>(fragment.c_str());
+-          iov[1].iov_len = fragment.length();
+-          iov[2].iov_base = const_cast<char*>("\n");
+-          iov[2].iov_len = 1;
+-          TEMP_FAILURE_RETRY(writev(kmsg_fd.get(), iov, 3));
++    if (write_to_logcat) {
++      msg = msg2;
++      if (log->amfd_data != nullptr) {
++        *log->amfd_data += msg;
++      }
++
++      if (write_to_kmsg) {
++        unique_fd kmsg_fd(open("/dev/kmsg_debug", O_WRONLY | O_APPEND | O_CLOEXEC));
++        if (kmsg_fd.get() >= 0) {
++          // Our output might contain newlines which would otherwise be handled by the android logger.
++          // Split the lines up ourselves before sending to the kernel logger.
++          if (msg.back() == '\n') {
++            msg.back() = '\0';
++          }
++
++          std::vector<std::string> fragments = android::base::Split(msg, "\n");
++          for (const std::string& fragment : fragments) {
++            static constexpr char prefix[] = "<3>DEBUG: ";
++            struct iovec iov[3];
++            iov[0].iov_base = const_cast<char*>(prefix);
++            iov[0].iov_len = strlen(prefix);
++            iov[1].iov_base = const_cast<char*>(fragment.c_str());
++            iov[1].iov_len = fragment.length();
++            iov[2].iov_base = const_cast<char*>("\n");
++            iov[2].iov_len = 1;
++            TEMP_FAILURE_RETRY(writev(kmsg_fd.get(), iov, 3));
++          }
+         }
+       }
+     }
+@@ -444,8 +458,12 @@ void log_backtrace(log_t* log, unwindstack::Unwinder* unwinder, const char* pref
+ #endif
+   }
+ 
++  bool enhance = (log->tfd != -1)
++                 || (log->crashed_tid != -1
++                     && log->current_tid != -1
++                     && (log->crashed_tid == log->current_tid));
+   unwinder->SetDisplayBuildID(true);
+   for (size_t i = 0; i < unwinder->NumFrames(); i++) {
+-    _LOG(log, logtype::BACKTRACE, "%s%s\n", prefix, unwinder->FormatFrame(i).c_str());
++    _LOG(log, logtype::BACKTRACE, "%s%s\n", prefix, unwinder->FormatFrame(i, enhance).c_str());
+   }
+ }
+diff --git a/debuggerd/tombstoned/tombstoned.cpp b/debuggerd/tombstoned/tombstoned.cpp
+index d09b8e860..a1acd31f4 100644
+--- a/debuggerd/tombstoned/tombstoned.cpp
++++ b/debuggerd/tombstoned/tombstoned.cpp
+@@ -238,7 +238,7 @@ static void perform_request(Crash* crash) {
+     goto fail;
+   } else {
+     // TODO: Make this configurable by the interceptor?
+-    struct timeval timeout = { 10, 0 };
++    struct timeval timeout = { 600, 0 };
+ 
+     event_base* base = event_get_base(crash->crash_event);
+     event_assign(crash->crash_event, base, crash->crash_socket_fd, EV_TIMEOUT | EV_READ,
+diff --git a/libunwindstack/Android.bp b/libunwindstack/Android.bp
+index 9b974c237..cf32908fd 100644
+--- a/libunwindstack/Android.bp
++++ b/libunwindstack/Android.bp
+@@ -127,17 +127,17 @@ cc_library {
+ 
+     target: {
+         vendor: {
+-            cflags: ["-UDEXFILE_SUPPORT"],
++            cflags: ["-UDEXFILE_SUPPORT", "-DENHANCE_BACKTRACE_USING_DEBUGINFOD=0"],
+             exclude_srcs: ["DexFile.cpp"],
+             exclude_shared_libs: ["libdexfile_support"],
+         },
+         recovery: {
+-            cflags: ["-UDEXFILE_SUPPORT"],
++            cflags: ["-UDEXFILE_SUPPORT", "-DENHANCE_BACKTRACE_USING_DEBUGINFOD=0"],
+             exclude_srcs: ["DexFile.cpp"],
+             exclude_shared_libs: ["libdexfile_support"],
+         },
+         native_bridge: {
+-            cflags: ["-UDEXFILE_SUPPORT"],
++            cflags: ["-UDEXFILE_SUPPORT", "-DENHANCE_BACKTRACE_USING_DEBUGINFOD=0"],
+             exclude_srcs: ["DexFile.cpp"],
+             exclude_shared_libs: ["libdexfile_support"],
+         },
+@@ -150,6 +150,40 @@ cc_library {
+     ],
+ }
+ 
++cc_library {
++    name: "libunwindstack_debuginfod",
++    defaults: ["libunwindstack_defaults"],
++
++    srcs: ["DexFile.cpp"],
++    cflags: ["-DDEXFILE_SUPPORT"],
++    shared_libs: ["libdexfile_support"],
++
++    target: {
++        android: {
++            cflags: [
++                "-DENHANCE_BACKTRACE_USING_DEBUGINFOD=1",
++                "-Wno-unused-parameter",
++            ],
++            shared_libs: [
++                "libcurl",
++                "libcutils",
++            ],
++            static_libs: [
++                "libLLVMBitReader",
++                "libLLVMCore",
++                "libLLVMDebugInfoCodeView",
++                "libLLVMDebugInfoDWARF",
++                "libLLVMDebugInfoPDB",
++                "libLLVMMC",
++                "libLLVMMCParser",
++                "libLLVMObject",
++                "libLLVMSupport",
++                "libLLVMSymbolize",
++            ],
++        },
++    },
++}
++
+ // Static library without DEX support to avoid dependencies on the ART APEX.
+ cc_library_static {
+     name: "libunwindstack_no_dex",
+diff --git a/libunwindstack/Unwinder.cpp b/libunwindstack/Unwinder.cpp
+index 1bb031947..507f181df 100644
+--- a/libunwindstack/Unwinder.cpp
++++ b/libunwindstack/Unwinder.cpp
+@@ -21,8 +21,15 @@
+ #include <string.h>
+ #include <sys/types.h>
+ #include <unistd.h>
++#include <fcntl.h>
++#include <sys/wait.h>
+ 
+ #include <algorithm>
++#include <iomanip>
++#include <sstream>
++#include <fstream>
++
++#include <android-base/unique_fd.h>
+ 
+ #include <android-base/stringprintf.h>
+ #include <android-base/strings.h>
+@@ -36,9 +43,23 @@
+ 
+ #include <unwindstack/DexFiles.h>
+ 
++#if ENHANCE_BACKTRACE_USING_DEBUGINFOD
++#include <log/log.h>
++#include <cutils/properties.h>
++#include "debuginfod_client.h"
++
++#include "llvm/DebugInfo/Symbolize/Symbolize.h"
++#include "llvm/Object/ObjectFile.h"
++#include "llvm/Support/Error.h"
++
++static constexpr char kDebuginfodCacheDir[] = "/debuginfo.cache";
++#endif
++
+ // Use the demangler from libc++.
+ extern "C" char* __cxa_demangle(const char*, char*, size_t*, int* status);
+ 
++using namespace android::base;
++
+ namespace unwindstack {
+ 
+ // Inject extra 'virtual' frame that represents the dex pc data.
+@@ -307,7 +328,114 @@ void Unwinder::Unwind(const std::vector<std::string>* initial_map_names_to_skip,
+   }
+ }
+ 
+-std::string Unwinder::FormatFrame(const FrameData& frame) const {
++#if ENHANCE_BACKTRACE_USING_DEBUGINFOD
++static std::string BuildIdBytesToHex(const std::string& build_id) {
++  std::ostringstream oss;
++  oss << std::hex << std::setfill('0');
++
++  for (unsigned char c : build_id) {
++    oss << std::setw(2) << static_cast<unsigned int>(c);
++  }
++
++  return oss.str();
++}
++
++static void EnhanceFrameWithDebuginfod(unwindstack::Unwinder* unwinder,
++                                      const unwindstack::FrameData& frame,
++                                      std::string* output) {
++  if (output == nullptr) {
++    return;
++  }
++
++  unwindstack::MapInfo* map_info = unwinder->GetMaps()->Find(frame.pc);
++  if (map_info == nullptr) {
++    return;
++  }
++
++  // Build ID from the mapped object.
++  std::string raw_build_id = map_info->GetBuildID();
++  if (raw_build_id.empty()) {
++    return;
++  }
++
++  std::string build_id_hex = BuildIdBytesToHex(raw_build_id);
++
++  static DebuginfodClient *client = new DebuginfodClient();
++
++  std::string debug_path;
++  if (!client->FetchDebuginfo(build_id_hex,
++                             kDebuginfodCacheDir,
++                             &debug_path)) {
++    return;
++  }
++
++  std::string file;
++  uint32_t line;
++  uint32_t column;
++
++  llvm::symbolize::LLVMSymbolizer::Options opts;
++  llvm::symbolize::LLVMSymbolizer symbolizer(opts);
++
++  auto result = symbolizer.symbolizeCode(debug_path, frame.rel_pc);
++
++  if (!result) {
++      return;
++  }
++
++  auto llvm_frame = result.get();
++
++  file = llvm_frame.FileName;
++  line = llvm_frame.Line;
++  column = llvm_frame.Column;
++
++  output->append("\n");
++  output->append(android::base::StringPrintf(
++      "          at %s:%u:%d",
++      file.c_str(),
++      line,
++      column));
++
++  std::string source_path;
++  if (!client->FetchSource(build_id_hex,
++                          file,
++                          kDebuginfodCacheDir,
++                          &source_path)) {
++    return;
++  }
++
++  std::ifstream src(source_path);
++  if (!src.is_open()) {
++    return;
++  }
++
++  std::vector<std::string> lines;
++  std::string text;
++
++  while (std::getline(src, text)) {
++    lines.push_back(text);
++  }
++
++  if (line == 0 || line > lines.size()) {
++    return;
++  }
++
++  output->append("\n");
++
++  int first = std::max(1, static_cast<int>(line) - 3);
++  int last  = std::min(static_cast<int>(lines.size()),
++                       static_cast<int>(line) + 3);
++
++  for (int i = first; i <= last; ++i) {
++    output->append(android::base::StringPrintf(
++        "%s %4d | %s\n",
++        i == static_cast<int>(line) ? ">" : " ",
++        i,
++        lines[i - 1].c_str()));
++  }
++}
++#endif
++
++std::string Unwinder::FormatFrame(const FrameData& frame, bool enhance) const {
+   std::string data;
+   if (regs_->Is32Bit()) {
+     data += android::base::StringPrintf("  #%02zu pc %08" PRIx64, frame.num, frame.rel_pc);
+@@ -350,14 +478,24 @@ std::string Unwinder::FormatFrame(const FrameData& frame) const {
+       data += " (BuildId: " + build_id + ')';
+     }
+   }
++
++#if ENHANCE_BACKTRACE_USING_DEBUGINFOD
++  static bool dev_mode = property_get_bool("ro.lepton.devmode", false);
++  if (enhance && dev_mode) {
++    EnhanceFrameWithDebuginfod(const_cast<Unwinder*>(this), frame, &data);
++  }
++#else
++  (void)enhance;
++#endif
++
+   return data;
+ }
+ 
+-std::string Unwinder::FormatFrame(size_t frame_num) const {
++std::string Unwinder::FormatFrame(size_t frame_num, bool enhance) const {
+   if (frame_num >= frames_.size()) {
+     return "";
+   }
+-  return FormatFrame(frames_[frame_num]);
++  return FormatFrame(frames_[frame_num], enhance);
+ }
+ 
+ void Unwinder::SetJitDebug(JitDebug* jit_debug, ArchEnum arch) {
+diff --git a/libunwindstack/debuginfod_client.h b/libunwindstack/debuginfod_client.h
+new file mode 100644
+index 000000000..013c975c7
+--- /dev/null
++++ b/libunwindstack/debuginfod_client.h
+@@ -0,0 +1,173 @@
++#pragma once
++#include <curl/curl.h>
++#include <sys/stat.h>
++#include <unistd.h>
++
++#include <cerrno>
++#include <string>
++#include <vector>
++#include <fstream>
++#include <list>
++
++#include <log/log.h>
++
++#include <android-base/strings.h>
++
++class DebuginfodClient {
++private:
++    struct Server {
++        std::string base_url;
++        CURL* curl;
++    };
++
++    std::vector<Server> servers_;
++
++    std::list<std::string> debug_infos_tried_;
++
++public:
++    DebuginfodClient(int timeout_sec = 0)
++        : timeout_sec_(timeout_sec) {
++        std::ifstream file("/vendor/etc/debuginfod_urls.txt");
++        if (!file.is_open()) {
++            ALOGE("Lepton: No debuginfod urls available!");
++            return;
++        }
++
++        std::string url;
++        while (file >> url) {
++            Server s;
++            s.base_url = android::base::Trim(url);
++            s.curl = curl_easy_init();
++            if (!s.curl)
++                continue;
++
++            curl_easy_setopt(s.curl, CURLOPT_CONNECTTIMEOUT, timeout_sec_);
++            curl_easy_setopt(s.curl, CURLOPT_TIMEOUT, timeout_sec_);
++            curl_easy_setopt(s.curl, CURLOPT_WRITEFUNCTION, WriteCallback);
++            curl_easy_setopt(s.curl, CURLOPT_FOLLOWLOCATION, 1L);
++            curl_easy_setopt(s.curl, CURLOPT_TCP_KEEPALIVE, 1L);
++            curl_easy_setopt(s.curl, CURLOPT_NOSIGNAL, 1L);
++
++            servers_.push_back(std::move(s));
++        }
++    }
++    ~DebuginfodClient() {
++        for (auto& server : servers_) {
++            if (server.curl)
++                curl_easy_cleanup(server.curl);
++        }
++    }
++
++    bool TriedFetching(const std::string &build_id) {
++        return (std::find(debug_infos_tried_.begin(), debug_infos_tried_.end(), build_id) != debug_infos_tried_.end());
++    }
++
++    bool FetchDebuginfo(const std::string& build_id_hex, const std::string& cache_dir,
++                          std::string* out_path) {
++        std::string url_path = "/buildid/" + build_id_hex + "/debuginfo";
++        std::string dest = cache_dir + "/" + build_id_hex + ".debug";
++        if (FileExistsNonEmpty(dest)) {
++            *out_path = dest;
++            return true;
++        }
++        if (TriedFetching(build_id_hex)) {
++            return false;
++        }
++        std::vector<uint8_t> body;
++        if (!HttpGet(url_path, &body) || body.empty()) {
++            ALOGE("Lepton: Could not fetch debuginfo from %s", url_path.c_str());
++            debug_infos_tried_.push_back(build_id_hex);
++            return false;
++        }
++        if (!MkdirsFor(dest) || !WriteFile(dest, body)) {
++            ALOGE("Lepton: Could not create %s", dest.c_str());
++            return false;
++        }
++        *out_path = dest;
++        return true;
++    }
++
++    bool FetchSource(const std::string& build_id_hex, const std::string& source_path,
++                        const std::string& cache_dir, std::string* out_path) {
++        std::string url_path = "/buildid/" + build_id_hex + "/source/" + source_path;
++        std::string dest = cache_dir + "/" + build_id_hex + "/" + SanitizePath(source_path);
++        if (FileExistsNonEmpty(dest)) {
++            *out_path = dest;
++            return true;
++        }
++        std::vector<uint8_t> body;
++        if (!HttpGet(url_path, &body) || body.empty()) {
++            ALOGE("Lepton: Could not fetch source from %s", url_path.c_str());
++            return false;
++        }
++        if (!MkdirsFor(dest) || !WriteFile(dest, body)) {
++            ALOGE("Lepton: Could not create %s", dest.c_str());
++            return false;
++        }
++        *out_path = dest;
++        return true;
++    }
++private:
++    int timeout_sec_;
++    static bool FileExistsNonEmpty(const std::string& path) {
++        FILE* f = fopen(path.c_str(), "rb");
++        if (!f) return false;
++        fseek(f, 0, SEEK_END);
++        long sz = ftell(f);
++        fclose(f);
++        return sz > 0;
++    }
++    static std::string SanitizePath(const std::string& p) {
++        std::string s = p;
++        for (auto& c : s)
++            if (c == '/') c = '_';
++        return s;
++    }
++    static bool MkdirsFor(const std::string& file_path) {
++        size_t pos = file_path.rfind('/');
++        if (pos == std::string::npos) return true;
++        std::string dir = file_path.substr(0, pos);
++        for (size_t i = 1; i < dir.size(); i++) {
++            if (dir[i] == '/') {
++                std::string partial = dir.substr(0, i);
++                if (mkdir(partial.c_str(), 0755) != 0 && errno != EEXIST) return false;
++            }
++        }
++        if (mkdir(dir.c_str(), 0755) != 0 && errno != EEXIST) return false;
++        return true;
++    }
++     static bool WriteFile(const std::string& path, const std::vector<uint8_t>& data) {
++        FILE* f = fopen(path.c_str(), "wb");
++        if (!f) return false;
++        size_t written = fwrite(data.data(), 1, data.size(), f);
++        fclose(f);
++        return written == data.size();
++    }
++    static size_t WriteCallback(char* ptr, size_t size, size_t nmemb, void* userdata) {
++        auto* out = static_cast<std::vector<uint8_t>*>(userdata);
++        size_t n = size * nmemb;
++        out->insert(out->end(), ptr, ptr + n);
++        return n;
++    }
++    bool HttpGet(const std::string& path, std::vector<uint8_t>* body) {
++        for (auto& server : servers_) {
++            body->clear();
++
++            std::string url = server.base_url + path;
++
++            curl_easy_setopt(server.curl, CURLOPT_URL, url.c_str());
++            curl_easy_setopt(server.curl, CURLOPT_WRITEDATA, body);
++
++            CURLcode res = curl_easy_perform(server.curl);
++
++            long status = 0;
++            curl_easy_getinfo(server.curl, CURLINFO_RESPONSE_CODE, &status);
++
++            if (res == CURLE_OK && status >= 200 && status < 300)
++                return true;
++        }
++
++        return false;
++    }
++};
++
+diff --git a/libunwindstack/include/unwindstack/Unwinder.h b/libunwindstack/include/unwindstack/Unwinder.h
+index 67762c0bd..d6fe0b890 100644
+--- a/libunwindstack/include/unwindstack/Unwinder.h
++++ b/libunwindstack/include/unwindstack/Unwinder.h
+@@ -87,8 +87,8 @@ class Unwinder {
+     return frames;
+   }
+ 
+-  std::string FormatFrame(size_t frame_num) const;
+-  std::string FormatFrame(const FrameData& frame) const;
++  std::string FormatFrame(size_t frame_num, bool enhance = false) const;
++  std::string FormatFrame(const FrameData& frame, bool enhance = false) const;
+ 
+   void SetJitDebug(JitDebug* jit_debug, ArchEnum arch);
+ 
+-- 
+2.54.0
+

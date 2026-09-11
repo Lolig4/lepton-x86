@@ -1,0 +1,76 @@
+From a00362af43fd341cb08da7579eb3e8d225e8caed Mon Sep 17 00:00:00 2001
+From: Franz-Josef Haider <frajo@frajo.fi>
+Date: Fri, 31 Jul 2026 14:17:01 +0300
+Subject: [PATCH 1/1] lepton: Parse http proxy from passed through env
+ variables.
+
+Since setting global put http_proxy only takes effect after reboot (with persistent lepton storage)
+We just parse the env variables instead.
+
+Change-Id: Ia95db28042ae51621a67d3e29c17968a4dff4e99
+---
+ .../server/connectivity/ProxyTracker.java     | 36 +++++++++++++++----
+ 1 file changed, 30 insertions(+), 6 deletions(-)
+
+diff --git a/service/src/com/android/server/connectivity/ProxyTracker.java b/service/src/com/android/server/connectivity/ProxyTracker.java
+index 4415007309..69370b5efe 100644
+--- a/service/src/com/android/server/connectivity/ProxyTracker.java
++++ b/service/src/com/android/server/connectivity/ProxyTracker.java
+@@ -40,6 +40,7 @@ import android.provider.Settings;
+ import android.text.TextUtils;
+ import android.util.Log;
+ import android.util.Pair;
++import android.system.Os;
+ 
+ import com.android.internal.annotations.GuardedBy;
+ import com.android.net.module.util.ProxyUtils;
+@@ -179,17 +180,40 @@ public class ProxyTracker {
+         }
+     }
+ 
++    private static String firstNonNull(String... values) {
++        for (String value : values) {
++            if (value != null) {
++                return value;
++            }
++        }
++        return null;
++    }
++
+     /**
+      * Read the global proxy settings and cache them in memory.
+      */
+     public void loadGlobalProxy() {
+-        if (loadDeprecatedGlobalHttpProxy()) {
+-            return;
+-        }
++        // Lepton:
++        //if (loadDeprecatedGlobalHttpProxy()) {
++        //    return;
++        //}
+         ContentResolver res = mContext.getContentResolver();
+-        String host = Settings.Global.getString(res, GLOBAL_HTTP_PROXY_HOST);
+-        int port = Settings.Global.getInt(res, GLOBAL_HTTP_PROXY_PORT, 0);
+-        String exclList = Settings.Global.getString(res, GLOBAL_HTTP_PROXY_EXCLUSION_LIST);
++        String proxy = firstNonNull(Os.getenv("HTTPS_PROXY"),
++                                    Os.getenv("https_proxy"),
++                                    Os.getenv("HTTP_PROXY"),
++                                    Os.getenv("http_proxy"));
++
++        String host = null;
++        int port = -1;
++
++        if (proxy != null) {
++            // URI requires a scheme, so prepend one if missing.
++            Uri uri = Uri.parse(proxy.contains("://") ? proxy : "http://" + proxy);
++            host = uri.getHost();
++            port = uri.getPort();
++        }
++
++        String exclList = firstNonNull(Os.getenv("NO_PROXY"), Os.getenv("no_proxy"));
+         String pacFileUrl = Settings.Global.getString(res, GLOBAL_HTTP_PROXY_PAC);
+         if (!TextUtils.isEmpty(host) || !TextUtils.isEmpty(pacFileUrl)) {
+             ProxyInfo proxyProperties;
+-- 
+2.55.0
+

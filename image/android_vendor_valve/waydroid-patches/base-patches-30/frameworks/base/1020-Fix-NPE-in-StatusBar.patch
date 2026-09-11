@@ -1,0 +1,39 @@
+From 14a60bd6d5f3860405c2d757913e46f935193aee Mon Sep 17 00:00:00 2001
+From: Dave Mankoff <mankoff@google.com>
+Date: Thu, 28 Jan 2021 17:43:09 -0500
+Subject: [PATCH 1/1] Fix NPE in StatusBar
+
+StatusBar was trying to call a method on the StatusBarView before
+the view had been set. There was actually a null check in part of
+the corrected method already. This extends the null check.
+
+Fixes: 176216370
+Test: manual
+Change-Id: I7c576d1018f15557fd787dc74897ed6946b38076
+---
+ .../com/android/systemui/statusbar/phone/StatusBar.java   | 8 ++++----
+ 1 file changed, 4 insertions(+), 4 deletions(-)
+
+diff --git a/packages/SystemUI/src/com/android/systemui/statusbar/phone/StatusBar.java b/packages/SystemUI/src/com/android/systemui/statusbar/phone/StatusBar.java
+index ebbefbe45244..28003f1146f8 100644
+--- a/packages/SystemUI/src/com/android/systemui/statusbar/phone/StatusBar.java
++++ b/packages/SystemUI/src/com/android/systemui/statusbar/phone/StatusBar.java
+@@ -2495,11 +2495,11 @@ public class StatusBar extends SystemUI implements DemoMode,
+                 && mStatusBarWindowState != state) {
+             mStatusBarWindowState = state;
+             if (DEBUG_WINDOW_STATE) Log.d(TAG, "Status bar " + windowStateToString(state));
+-            if (!showing && mState == StatusBarState.SHADE) {
+-                mStatusBarView.collapsePanel(false /* animate */, false /* delayed */,
+-                        1.0f /* speedUpFactor */);
+-            }
+             if (mStatusBarView != null) {
++                if (!showing && mState == StatusBarState.SHADE) {
++                    mStatusBarView.collapsePanel(false /* animate */, false /* delayed */,
++                            1.0f /* speedUpFactor */);
++                }
+                 mStatusBarWindowHidden = state == WINDOW_STATE_HIDDEN;
+                 updateHideIconsForBouncer(false /* animate */);
+             }
+-- 
+2.54.0
+

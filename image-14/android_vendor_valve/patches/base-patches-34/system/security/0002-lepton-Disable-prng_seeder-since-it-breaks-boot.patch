@@ -1,0 +1,28 @@
+From 9284c07d05302316ee0931ec9263cdc7746772bc Mon Sep 17 00:00:00 2001
+From: Franz-Josef Haider <frajo@frajo.fi>
+Date: Tue, 26 May 2026 11:32:30 +0300
+Subject: [PATCH 2/2] lepton: Disable prng_seeder since it breaks boot.
+
+Change-Id: I1ca1067b67e2b5a06f9cd6446de61ce9f958151d
+---
+ prng_seeder/prng_seeder.rc | 4 ++--
+ 1 file changed, 2 insertions(+), 2 deletions(-)
+
+diff --git a/prng_seeder/prng_seeder.rc b/prng_seeder/prng_seeder.rc
+index 9825583a..50072a10 100644
+--- a/prng_seeder/prng_seeder.rc
++++ b/prng_seeder/prng_seeder.rc
+@@ -2,8 +2,8 @@
+ #
+ # Start PRNG seeder daemon from early-init
+ 
+-on early-init
+-    start prng_seeder
++#on early-init
++#    start prng_seeder
+ 
+ service prng_seeder /system/bin/prng_seeder
+     user prng_seeder
+-- 
+2.55.0
+

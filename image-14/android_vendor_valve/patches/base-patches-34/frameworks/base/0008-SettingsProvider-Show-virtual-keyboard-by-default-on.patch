@@ -1,0 +1,44 @@
+From c82996158efd2b9907e3c2e7c697f584e387fc20 Mon Sep 17 00:00:00 2001
+From: Alessandro Astone <ales.astone@gmail.com>
+Date: Wed, 8 Feb 2023 15:57:51 +0100
+Subject: [PATCH 08/22] SettingsProvider: Show virtual keyboard by default on
+ upgrade
+
+Change-Id: If3a38ee074bd25171ddfbc7f5bfeb85385b0142a
+---
+ .../android/providers/settings/SettingsProvider.java | 12 +++++++++++-
+ 1 file changed, 11 insertions(+), 1 deletion(-)
+
+diff --git a/packages/SettingsProvider/src/com/android/providers/settings/SettingsProvider.java b/packages/SettingsProvider/src/com/android/providers/settings/SettingsProvider.java
+index 1ead14ab6f4c..669bbc32b900 100644
+--- a/packages/SettingsProvider/src/com/android/providers/settings/SettingsProvider.java
++++ b/packages/SettingsProvider/src/com/android/providers/settings/SettingsProvider.java
+@@ -3812,7 +3812,7 @@ public class SettingsProvider extends ContentProvider {
+         }
+ 
+         private final class UpgradeController {
+-            private static final int SETTINGS_VERSION = 226;
++            private static final int SETTINGS_VERSION = 227;
+ 
+             private final int mUserId;
+ 
+@@ -6033,6 +6033,16 @@ public class SettingsProvider extends ContentProvider {
+                     currentVersion = 226;
+                 }
+ 
++                if (currentVersion == 226) {
++                    final SettingsState secureSettings = getSecureSettingsLocked(userId);
++                    secureSettings.insertSettingOverrideableByRestoreLocked(
++                            Settings.Secure.SHOW_IME_WITH_HARD_KEYBOARD,
++                            getContext().getResources().getBoolean(
++                                    R.bool.def_show_ime_with_hard_keyboard) ? "1" : "0",
++                            null, true, SettingsState.SYSTEM_PACKAGE_NAME);
++                    currentVersion = 227;
++                }
++
+                 // vXXX: Add new settings above this point.
+ 
+                 if (currentVersion != newVersion) {
+-- 
+2.55.0
+

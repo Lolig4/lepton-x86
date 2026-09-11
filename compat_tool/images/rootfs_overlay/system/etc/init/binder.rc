@@ -1,0 +1,7 @@
+on early-init
+    mkdir /dev/binderfs
+    exec - root root -- /system/bin/mount -t binder binder /dev/binderfs
+    exec - root root -- /system/bin/mv /dev/binderfs/anbox-binder /dev/binderfs/binder
+    exec - root root -- /system/bin/mv /dev/binderfs/anbox-hwbinder /dev/binderfs/hwbinder
+    exec - root root -- /system/bin/mv /dev/binderfs/anbox-vndbinder /dev/binderfs/vndbinder
+

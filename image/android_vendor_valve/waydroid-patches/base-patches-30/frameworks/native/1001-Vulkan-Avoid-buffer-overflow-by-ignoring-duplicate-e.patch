@@ -1,0 +1,43 @@
+From 34e5bb7b4f19e5b4e3d1cf722367358a42949c85 Mon Sep 17 00:00:00 2001
+From: Ian Elliott <ianelliott@google.com>
+Date: Thu, 10 Aug 2023 13:32:55 -0600
+Subject: [PATCH] Vulkan: Avoid buffer overflow by ignoring duplicate
+ extensions
+
+For any instance extension that a Vulkan driver supports, if a
+VkInstance is created with that extension listed multiple times, the
+2nd-nth times should be ignored.  That avoids overwriting an array in
+CreateInfoWrapper::FilterExtension().
+
+Test: Manual testing with logcat
+Bug: 288929054
+Change-Id: I096a6752e0f4abef868efdb6f8b4bcbd0c0c79cd
+---
+ vulkan/libvulkan/driver.cpp | 11 +++++++++++
+ 1 file changed, 11 insertions(+)
+
+diff --git a/vulkan/libvulkan/driver.cpp b/vulkan/libvulkan/driver.cpp
+index f840561292..e244e4c5a8 100644
+--- a/vulkan/libvulkan/driver.cpp
++++ b/vulkan/libvulkan/driver.cpp
+@@ -616,6 +616,17 @@ void CreateInfoWrapper::FilterExtension(const char* name) {
+         if (strcmp(name, props.extensionName) != 0)
+             continue;
+ 
++        // Ignore duplicate extensions (see: b/288929054)
++        bool duplicate_entry = false;
++        for (uint32_t j = 0; j < filter.name_count; j++) {
++            if (strcmp(name, filter.names[j]) == 0) {
++                duplicate_entry = true;
++                break;
++            }
++        }
++        if (duplicate_entry == true)
++            continue;
++
+         filter.names[filter.name_count++] = name;
+         if (ext_bit != ProcHook::EXTENSION_UNKNOWN) {
+             if (ext_bit == ProcHook::ANDROID_native_buffer)
+-- 
+2.45.2
+

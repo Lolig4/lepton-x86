@@ -1,0 +1,43 @@
+From c3424033693f6bea27461f103ea9112146fb4ed4 Mon Sep 17 00:00:00 2001
+From: Franz-Josef Haider <frajo@frajo.fi>
+Date: Mon, 22 Jun 2026 19:44:31 +0300
+Subject: [PATCH 17/21] lepton: Make sure we always mount with gid=0 in our
+ fake uid mode.
+
+Change-Id: I8fa61deac67a806b9a3a96038a95f07fae2e8847
+---
+ init/first_stage_init.cpp | 4 +++-
+ rootdir/init.rc           | 2 +-
+ 2 files changed, 4 insertions(+), 2 deletions(-)
+
+diff --git a/init/first_stage_init.cpp b/init/first_stage_init.cpp
+index 6c2335e04a..fbde5a464e 100644
+--- a/init/first_stage_init.cpp
++++ b/init/first_stage_init.cpp
+@@ -340,7 +340,9 @@ int FirstStageMain(int argc, char** argv) {
+     CHECKCALL(mkdir("/dev/dm-user", 0755));
+     CHECKCALL(mount("devpts", "/dev/pts", "devpts", 0, NULL));
+ #define MAKE_STR(x) __STRING(x)
+-    CHECKCALL(mount("proc", "/proc", "proc", 0, "hidepid=2,gid=" MAKE_STR(AID_READPROC)));
++    //CHECKCALL(mount("proc", "/proc", "proc", 0, "hidepid=2,gid=" MAKE_STR(AID_READPROC)));
++    // Lepton
++    CHECKCALL(mount("proc", "/proc", "proc", 0, "hidepid=2,gid=0"));
+ #undef MAKE_STR
+     */
+     // Don't expose the raw commandline to unprivileged processes.
+diff --git a/rootdir/init.rc b/rootdir/init.rc
+index 829a463459..7222459697 100644
+--- a/rootdir/init.rc
++++ b/rootdir/init.rc
+@@ -81,7 +81,7 @@ on early-init
+     mkdir /dev/boringssl/selftest 0755 root root
+ 
+     # Mount tracefs (with GID=AID_READTRACEFS)
+-    mount tracefs tracefs /sys/kernel/tracing gid=3012
++    mount tracefs tracefs /sys/kernel/tracing gid=0
+ 
+     # create sys dirctory
+     mkdir /dev/sys 0755 system system
+-- 
+2.55.0
+

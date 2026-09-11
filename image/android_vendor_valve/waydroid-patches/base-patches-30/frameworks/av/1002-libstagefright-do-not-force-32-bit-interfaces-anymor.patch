@@ -1,0 +1,140 @@
+From 33fd9f01ad837dbc0f2c52613cd68df021a6c5cf Mon Sep 17 00:00:00 2001
+From: Elliot Saba <sabae@valvesoftware.com>
+Date: Wed, 15 Jan 2025 14:28:23 -0800
+Subject: [PATCH] libstagefright: do not force 32-bit interfaces anymore
+
+Change-Id: Ie42f27382e6f2add5ee5034f15ddaa9fad83194b
+---
+ media/codec2/sfplugin/C2OMXNode.cpp                   | 4 ----
+ media/codec2/sfplugin/Omx2IGraphicBufferSource.cpp    | 4 ----
+ media/libstagefright/ACodec.cpp                       | 4 ----
+ media/libstagefright/FFMPEGSoftCodec.cpp              | 4 ----
+ media/libstagefright/OMXClient.cpp                    | 4 ----
+ media/libstagefright/OmxInfoBuilder.cpp               | 4 ----
+ media/libstagefright/omx/1.0/WGraphicBufferSource.cpp | 4 ----
+ media/libstagefright/omx/OmxGraphicBufferSource.cpp   | 4 ----
+ 8 files changed, 32 deletions(-)
+
+diff --git a/media/codec2/sfplugin/C2OMXNode.cpp b/media/codec2/sfplugin/C2OMXNode.cpp
+index dd1f4858a5..56ba9c608e 100644
+--- a/media/codec2/sfplugin/C2OMXNode.cpp
++++ b/media/codec2/sfplugin/C2OMXNode.cpp
+@@ -14,10 +14,6 @@
+  * limitations under the License.
+  */
+ 
+-#ifdef __LP64__
+-#define OMX_ANDROID_COMPILE_AS_32BIT_ON_64BIT_PLATFORMS
+-#endif
+-
+ //#define LOG_NDEBUG 0
+ #define LOG_TAG "C2OMXNode"
+ #include <log/log.h>
+diff --git a/media/codec2/sfplugin/Omx2IGraphicBufferSource.cpp b/media/codec2/sfplugin/Omx2IGraphicBufferSource.cpp
+index 764fa001ec..e3a9259e90 100644
+--- a/media/codec2/sfplugin/Omx2IGraphicBufferSource.cpp
++++ b/media/codec2/sfplugin/Omx2IGraphicBufferSource.cpp
+@@ -14,10 +14,6 @@
+  * limitations under the License.
+  */
+ 
+-#ifdef __LP64__
+-#define OMX_ANDROID_COMPILE_AS_32BIT_ON_64BIT_PLATFORMS
+-#endif
+-
+ //#define LOG_NDEBUG 0
+ #define LOG_TAG "Omx2IGraphicBufferSource"
+ #include <android-base/logging.h>
+diff --git a/media/libstagefright/ACodec.cpp b/media/libstagefright/ACodec.cpp
+index bde289d8ce..ff847f932f 100644
+--- a/media/libstagefright/ACodec.cpp
++++ b/media/libstagefright/ACodec.cpp
+@@ -17,10 +17,6 @@
+ //#define LOG_NDEBUG 0
+ #define LOG_TAG "ACodec"
+ 
+-#ifdef __LP64__
+-#define OMX_ANDROID_COMPILE_AS_32BIT_ON_64BIT_PLATFORMS
+-#endif
+-
+ #include <inttypes.h>
+ #include <utils/Trace.h>
+ 
+diff --git a/media/libstagefright/FFMPEGSoftCodec.cpp b/media/libstagefright/FFMPEGSoftCodec.cpp
+index 91c9de7a5c..b9fca3f5cc 100644
+--- a/media/libstagefright/FFMPEGSoftCodec.cpp
++++ b/media/libstagefright/FFMPEGSoftCodec.cpp
+@@ -14,10 +14,6 @@
+  * limitations under the License.
+  */
+ 
+-#ifdef __LP64__
+-#define OMX_ANDROID_COMPILE_AS_32BIT_ON_64BIT_PLATFORMS
+-#endif
+-
+ //#define LOG_NDEBUG 0
+ #define LOG_TAG "FFMPEGSoftCodec"
+ #include <utils/Log.h>
+diff --git a/media/libstagefright/OMXClient.cpp b/media/libstagefright/OMXClient.cpp
+index 9375de1266..aad5c53d69 100644
+--- a/media/libstagefright/OMXClient.cpp
++++ b/media/libstagefright/OMXClient.cpp
+@@ -17,10 +17,6 @@
+ //#define LOG_NDEBUG 0
+ #define LOG_TAG "OMXClient"
+ 
+-#ifdef __LP64__
+-#define OMX_ANDROID_COMPILE_AS_32BIT_ON_64BIT_PLATFORMS
+-#endif
+-
+ #include <utils/Log.h>
+ #include <cutils/properties.h>
+ 
+diff --git a/media/libstagefright/OmxInfoBuilder.cpp b/media/libstagefright/OmxInfoBuilder.cpp
+index 79ffdeb894..e455b21818 100644
+--- a/media/libstagefright/OmxInfoBuilder.cpp
++++ b/media/libstagefright/OmxInfoBuilder.cpp
+@@ -17,10 +17,6 @@
+ //#define LOG_NDEBUG 0
+ #define LOG_TAG "OmxInfoBuilder"
+ 
+-#ifdef __LP64__
+-#define OMX_ANDROID_COMPILE_AS_32BIT_ON_64BIT_PLATFORMS
+-#endif
+-
+ #include <android-base/properties.h>
+ #include <utils/Log.h>
+ 
+diff --git a/media/libstagefright/omx/1.0/WGraphicBufferSource.cpp b/media/libstagefright/omx/1.0/WGraphicBufferSource.cpp
+index 7d217ebd74..b5e44a2724 100644
+--- a/media/libstagefright/omx/1.0/WGraphicBufferSource.cpp
++++ b/media/libstagefright/omx/1.0/WGraphicBufferSource.cpp
+@@ -14,10 +14,6 @@
+  * limitations under the License.
+  */
+ 
+-#ifdef __LP64__
+-#define OMX_ANDROID_COMPILE_AS_32BIT_ON_64BIT_PLATFORMS
+-#endif
+-
+ //#define LOG_NDEBUG 0
+ #define LOG_TAG "TWGraphicBufferSource"
+ 
+diff --git a/media/libstagefright/omx/OmxGraphicBufferSource.cpp b/media/libstagefright/omx/OmxGraphicBufferSource.cpp
+index 9484046f79..e1dbb8fcc1 100644
+--- a/media/libstagefright/omx/OmxGraphicBufferSource.cpp
++++ b/media/libstagefright/omx/OmxGraphicBufferSource.cpp
+@@ -14,10 +14,6 @@
+  * limitations under the License.
+  */
+ 
+-#ifdef __LP64__
+-#define OMX_ANDROID_COMPILE_AS_32BIT_ON_64BIT_PLATFORMS
+-#endif
+-
+ #include <inttypes.h>
+ 
+ #define LOG_TAG "OmxGraphicBufferSource"
+-- 
+2.34.1
+

@@ -1,0 +1,105 @@
+From a7775493ec517f01a24ce09883d23d4bc939b892 Mon Sep 17 00:00:00 2001
+From: Franz-Josef Haider <frajo@frajo.fi>
+Date: Mon, 22 Jun 2026 17:42:05 +0300
+Subject: [PATCH 1/2] Revert "Remove TARGET_FLATTEN_APEX"
+
+This reverts commit 0d500c58aaee61bd8827ed74088d89ec966c0d16.
+
+Change-Id: Id0a23765bde71e4899ffaeeb8d4c23d867fc0770
+---
+ core/Makefile                    |  3 +++
+ core/board_config.mk             | 18 ++++++++++++++++++
+ target/product/base_system.mk    |  4 ----
+ target/product/updatable_apex.mk | 22 +++++++++++++---------
+ 4 files changed, 34 insertions(+), 13 deletions(-)
+
+diff --git a/core/Makefile b/core/Makefile
+index 084a500c1b..35b23cb3f2 100644
+--- a/core/Makefile
++++ b/core/Makefile
+@@ -5978,6 +5978,9 @@ endif
+ ifeq ($(BUILDING_WITH_VSDK),true)
+ 	$(hide) echo "building_with_vsdk=true" >> $@
+ endif
++ifeq ($(TARGET_FLATTEN_APEX),false)
++	$(hide) echo "target_flatten_apex=false" >> $@
++endif
+ 
+ $(call declare-0p-target,$(INSTALLED_FASTBOOT_INFO_TARGET))
+ 
+diff --git a/core/board_config.mk b/core/board_config.mk
+index 6fa9ad940a..7f6c815b2d 100644
+--- a/core/board_config.mk
++++ b/core/board_config.mk
+@@ -981,6 +981,24 @@ endif
+ 
+ TARGET_VENDOR_TEST_SUFFIX := /vendor
+ 
++###########################################
++# APEXes are by default not flattened, i.e. updatable.
++#
++# APEX flattening can also be forcibly enabled (resp. disabled) by
++# setting OVERRIDE_TARGET_FLATTEN_APEX to true (resp. false), e.g. by
++# setting the OVERRIDE_TARGET_FLATTEN_APEX environment variable.
++ifdef OVERRIDE_TARGET_FLATTEN_APEX
++  TARGET_FLATTEN_APEX := $(OVERRIDE_TARGET_FLATTEN_APEX)
++endif
++
++# TODO(b/278826656) Remove the following message
++ifeq (true,$(TARGET_FLATTEN_APEX))
++  $(warning ********************************************************************************)
++  $(warning Flattened APEX will be deprecated soon. Please stop using flattened APEX and use)
++  $(warning "image" APEX instead.)
++  $(warning ********************************************************************************)
++endif
++
+ ifeq (,$(TARGET_BUILD_UNBUNDLED))
+ ifdef PRODUCT_EXTRA_VNDK_VERSIONS
+   $(foreach v,$(PRODUCT_EXTRA_VNDK_VERSIONS),$(call check_vndk_version,$(v)))
+diff --git a/target/product/base_system.mk b/target/product/base_system.mk
+index 5969cc884d..5170ee0bdd 100644
+--- a/target/product/base_system.mk
++++ b/target/product/base_system.mk
+@@ -505,8 +505,4 @@ PRODUCT_COPY_FILES += $(call add-to-product-copy-files-if-exists,\
+     frameworks/base/config/dirty-image-objects:system/etc/dirty-image-objects)
+ 
+ $(call inherit-product, $(SRC_TARGET_DIR)/product/runtime_libart.mk)
+-
+-# Use "image" APEXes always.
+-$(call inherit-product,$(SRC_TARGET_DIR)/product/updatable_apex.mk)
+-
+ $(call soong_config_set, bionic, large_system_property_node, $(RELEASE_LARGE_SYSTEM_PROPERTY_NODE))
+diff --git a/target/product/updatable_apex.mk b/target/product/updatable_apex.mk
+index 8357fdf7fd..c19982b274 100644
+--- a/target/product/updatable_apex.mk
++++ b/target/product/updatable_apex.mk
+@@ -14,13 +14,17 @@
+ # limitations under the License.
+ #
+ 
+-# com.android.apex.cts.shim.v1_prebuilt overrides CtsShimPrebuilt
+-# and CtsShimPrivPrebuilt since they are packaged inside the APEX.
+-PRODUCT_PACKAGES += com.android.apex.cts.shim.v1_prebuilt
+-PRODUCT_SYSTEM_PROPERTIES := ro.apex.updatable=true
++# Inherit this when the target needs to support updating APEXes
+ 
+-# Use compressed apexes in pre-installed partitions.
+-# Note: this doesn't mean that all pre-installed apexes will be compressed.
+-#  Whether an apex is compressed or not is controlled at apex Soong module
+-#  via compresible property.
+-PRODUCT_COMPRESSED_APEX := true
++ifneq ($(OVERRIDE_TARGET_FLATTEN_APEX),true)
++  # com.android.apex.cts.shim.v1_prebuilt overrides CtsShimPrebuilt
++  # and CtsShimPrivPrebuilt since they are packaged inside the APEX.
++  PRODUCT_PACKAGES += com.android.apex.cts.shim.v1_prebuilt
++  PRODUCT_SYSTEM_PROPERTIES := ro.apex.updatable=true
++  TARGET_FLATTEN_APEX := false
++  # Use compressed apexes in pre-installed partitions.
++  # Note: this doesn't mean that all pre-installed apexes will be compressed.
++  #  Whether an apex is compressed or not is controlled at apex Soong module
++  #  via compresible property.
++  PRODUCT_COMPRESSED_APEX := true
++endif
+-- 
+2.55.0
+

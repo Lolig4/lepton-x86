@@ -1,0 +1,73 @@
+From a60fe12fe998bd6f7f384c214ccfb7a65caf7394 Mon Sep 17 00:00:00 2001
+From: Franz-Josef Haider <frajo@frajo.fi>
+Date: Mon, 2 Mar 2026 17:37:27 +0200
+Subject: [PATCH 09/11] Revert "sdk: Add reboot and upgrade to
+ waydroid.IHardware"
+
+This reverts commit 1ab61ffafeeae0123d5a75c39398c7a999cf598c.
+---
+ api/lineage_current.txt                       |  2 --
+ sdk/src/java/lineageos/waydroid/Hardware.java | 24 -------------------
+ .../java/lineageos/waydroid/IHardware.aidl    |  2 --
+ 3 files changed, 28 deletions(-)
+
+diff --git a/api/lineage_current.txt b/api/lineage_current.txt
+index 4d01f475..f035a1c9 100644
+--- a/api/lineage_current.txt
++++ b/api/lineage_current.txt
+@@ -1204,8 +1204,6 @@ package lineageos.waydroid {
+     method public int enableNFC(boolean);
+     method public int enableBluetooth(boolean);
+     method public void suspend();
+-    method public void reboot();
+-    method public void upgrade(String, int, String, int);
+   }
+ 
+   public class Platform {
+diff --git a/sdk/src/java/lineageos/waydroid/Hardware.java b/sdk/src/java/lineageos/waydroid/Hardware.java
+index 48d6f541..ed46dff6 100644
+--- a/sdk/src/java/lineageos/waydroid/Hardware.java
++++ b/sdk/src/java/lineageos/waydroid/Hardware.java
+@@ -113,28 +113,4 @@ public class Hardware {
+         }
+         return;
+     }
+-
+-    public void reboot() {
+-        if (sService == null) {
+-            return;
+-        }
+-        try {
+-            sService.reboot();
+-        } catch (RemoteException e) {
+-            Log.e(TAG, e.getLocalizedMessage(), e);
+-        }
+-        return;
+-    }
+-
+-    public void upgrade(String system_zip, int system_time, String vendor_zip, int vendor_time) {
+-        if (sService == null) {
+-            return;
+-        }
+-        try {
+-            sService.upgrade(system_zip, system_time, vendor_zip, vendor_time);
+-        } catch (RemoteException e) {
+-            Log.e(TAG, e.getLocalizedMessage(), e);
+-        }
+-        return;
+-    }
+ }
+diff --git a/sdk/src/java/lineageos/waydroid/IHardware.aidl b/sdk/src/java/lineageos/waydroid/IHardware.aidl
+index 7d1b266b..8e56f5dd 100644
+--- a/sdk/src/java/lineageos/waydroid/IHardware.aidl
++++ b/sdk/src/java/lineageos/waydroid/IHardware.aidl
+@@ -21,6 +21,4 @@ interface IHardware {
+     int enableNFC(boolean enable);
+     int enableBluetooth(boolean enable);
+     void suspend();
+-    void reboot();
+-    void upgrade(String system_zip, int system_time, String vendor_zip, int vendor_time);
+ }
+-- 
+2.53.0
+

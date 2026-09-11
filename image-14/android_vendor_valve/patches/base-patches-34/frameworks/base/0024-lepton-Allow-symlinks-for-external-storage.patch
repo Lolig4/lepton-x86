@@ -1,0 +1,26 @@
+From 2954a698e1332532466358103ad221587feb027f Mon Sep 17 00:00:00 2001
+From: Franz-Josef Haider <frajo@frajo.fi>
+Date: Wed, 9 Sep 2026 12:44:29 +0300
+Subject: [PATCH 1/1] lepton: Allow symlinks for external storage.
+
+Change-Id: Ie7bb879d69fa0829444e2d1696576957cfab5184
+---
+ .../com/android/externalstorage/ExternalStorageProvider.java    | 2 +-
+ 1 file changed, 1 insertion(+), 1 deletion(-)
+
+diff --git a/packages/ExternalStorageProvider/src/com/android/externalstorage/ExternalStorageProvider.java b/packages/ExternalStorageProvider/src/com/android/externalstorage/ExternalStorageProvider.java
+index 3409c29d3c2c..05d6f4b52f8b 100644
+--- a/packages/ExternalStorageProvider/src/com/android/externalstorage/ExternalStorageProvider.java
++++ b/packages/ExternalStorageProvider/src/com/android/externalstorage/ExternalStorageProvider.java
+@@ -329,7 +329,7 @@ public class ExternalStorageProvider extends FileSystemProvider {
+             throws FileNotFoundException {
+         final File dir = getFileForDocId(documentId, false);
+         // The file is null or it is not a directory
+-        if (dir == null || !dir.isDirectory()) {
++        if (dir == null) {// || !dir.isDirectory()) {
+             return false;
+         }
+ 
+-- 
+2.55.0
+

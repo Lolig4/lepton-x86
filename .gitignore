@@ -1,0 +1,9 @@
+lepton_compat_tool_build.vdf
+lepton_rootfs_build.vdf
+install
+install-rootfs
+compat_tool/images/rootfs
+compat_tool/images/sysbake
+*.zip
+compat_tool/liblepton/apk_extractor/bin/apk-info-extractor
+compat_tool.tar.zst

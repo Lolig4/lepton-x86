@@ -1,0 +1,11 @@
+service vendor.audio-hal /vendor/bin/hw/android.hardware.audio.service
+    override
+    class hal
+    # Lepton: We run this as root:root which maps to the host user
+    user root
+    # media gid needed for /dev/fm (radio) and for /data/misc/media (tee)
+    group root audioserver audio camera drmrpc inet media mediadrm net_bt net_bt_admin net_bw_acct wakelock context_hub
+    capabilities BLOCK_SUSPEND
+    ioprio rt 4
+    task_profiles ProcessCapacityHigh HighPerformance
+    onrestart restart audioserver

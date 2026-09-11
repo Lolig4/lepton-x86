@@ -1,0 +1,443 @@
+From f121d828f67eb02a5830bb92e587df342ead20f2 Mon Sep 17 00:00:00 2001
+From: Elliot Saba <sabae@valvesoftware.com>
+Date: Thu, 31 Oct 2024 08:51:40 -0700
+Subject: [PATCH] Strip out all tests
+
+Change-Id: I7e121420dc7f5f876c146b9c49b917f91cc37bcc
+---
+ .../tests/instrumentation_metric_test_list.mk |  25 +---
+ .../tasks/tests/instrumentation_test_list.mk  |  69 +---------
+ build/tasks/tests/native_metric_test_list.mk  |  20 +--
+ build/tasks/tests/native_test_list.mk         | 124 +----------------
+ build/tasks/tests/platform_test_list.mk       | 129 ------------------
+ .../{Android.bp => Android.bp.disabled}       |   0
+ .../{Android.bp => Android.bp.disabled}       |   0
+ .../{Android.bp => Android.bp.disabled}       |   0
+ 8 files changed, 4 insertions(+), 363 deletions(-)
+ rename libraries/car-helpers/multiuser-helper/{Android.bp => Android.bp.disabled} (100%)
+ rename tests/jank/UbSystemUiJankTests/{Android.bp => Android.bp.disabled} (100%)
+ rename tests/perf/PerfTransitionTest/{Android.bp => Android.bp.disabled} (100%)
+
+diff --git a/build/tasks/tests/instrumentation_metric_test_list.mk b/build/tasks/tests/instrumentation_metric_test_list.mk
+index be7952939..54351c81d 100644
+--- a/build/tasks/tests/instrumentation_metric_test_list.mk
++++ b/build/tasks/tests/instrumentation_metric_test_list.mk
+@@ -12,27 +12,4 @@
+ # See the License for the specific language governing permissions and
+ # limitations under the License.
+ 
+-instrumentation_metric_tests := \
+-    AutofillPerfTests \
+-    BlobStorePerfTests \
+-    crashcollector \
+-    CorePerfTests \
+-    DocumentsUIAppPerfTests \
+-    MtpServicePerfTests \
+-    RsBlasBenchmark \
+-    ImageProcessingJB \
+-    MediaProviderClientTests \
+-    MultiUserPerfDummyApp \
+-    MultiUserPerfTests \
+-    NeuralNetworksApiBenchmark \
+-    PackageManagerPerfTests \
+-    TextClassifierPerfTests \
+-    WmPerfTests \
+-    trace_config_detailed.textproto
+-
+-    # TODO(b/72332760): Uncomment when fixed
+-    #DocumentsUIPerfTests
+-
+-ifneq ($(strip $(BOARD_PERFSETUP_SCRIPT)),)
+-instrumentation_metric_tests += perf-setup.sh
+-endif
++instrumentation_metric_tests :=
+\ No newline at end of file
+diff --git a/build/tasks/tests/instrumentation_test_list.mk b/build/tasks/tests/instrumentation_test_list.mk
+index 23861c873..51157b18b 100644
+--- a/build/tasks/tests/instrumentation_test_list.mk
++++ b/build/tasks/tests/instrumentation_test_list.mk
+@@ -12,71 +12,4 @@
+ # See the License for the specific language governing permissions and
+ # limitations under the License.
+ 
+-instrumentation_tests := \
+-    HelloWorldTests \
+-    BluetoothInstrumentationTests \
+-    crashcollector \
+-    LongevityPlatformLibTests \
+-    ManagedProvisioningTests \
+-    FrameworksCoreTests \
+-    FrameworksMockingCoreTests \
+-    BinderProxyCountingTestApp \
+-    BinderProxyCountingTestService \
+-    FrameworksNetTests \
+-    FrameworksUiServicesTests \
+-    BstatsTestApp \
+-    ConnTestApp \
+-    FrameworksServicesTests \
+-    FrameworksMockingServicesTests \
+-    WmTests \
+-    JobTestApp \
+-    SuspendTestApp \
+-    FrameworksUtilTests \
+-    MtpServiceTests \
+-    MtpTests \
+-    DocumentsUITests \
+-    ShellTests \
+-    SystemUITests \
+-    TestablesTests \
+-    FrameworksWifiApiTests \
+-    FrameworksWifiTests \
+-    FrameworksTelephonyTests \
+-    ContactsProviderTests \
+-    ContactsProviderTests2 \
+-    SettingsUnitTests \
+-    TelecomUnitTests \
+-    TraceurUiTests \
+-    AndroidVCardTests \
+-    PermissionFunctionalTests \
+-    BlockedNumberProviderTest \
+-    DownloadAppFunctionalTests \
+-    NotificationFunctionalTests \
+-    DynamicCodeLoggerIntegrationTests \
+-    UsbTests \
+-    DownloadProviderTests \
+-    EmergencyInfoUnitTests \
+-    CalendarProviderTests \
+-    SettingsLibTests \
+-    RSTest \
+-    PrintSpoolerOutOfProcessTests \
+-    CellBroadcastReceiverUnitTests \
+-    CellBroadcastServiceTests \
+-    TelephonyProviderTests \
+-    CarrierConfigTests \
+-    TeleServiceTests \
+-    PresencePollingTests \
+-    SettingsProviderTest \
+-    FrameworksLocationTests \
+-    FrameworksPrivacyLibraryTests \
+-    SettingsUITests \
+-    SettingsPerfTests \
+-    ExtServicesUnitTests\
+-    FrameworksNetSmokeTests\
+-
+-
+-# Storage Manager may not exist on device
+-ifneq ($(filter StorageManager, $(PRODUCT_PACKAGES)),)
+-
+-instrumentation_tests += StorageManagerUnitTests
+-
+-endif
++instrumentation_tests :=
+\ No newline at end of file
+diff --git a/build/tasks/tests/native_metric_test_list.mk b/build/tasks/tests/native_metric_test_list.mk
+index 4f136ec60..6e3f6b3b6 100644
+--- a/build/tasks/tests/native_metric_test_list.mk
++++ b/build/tasks/tests/native_metric_test_list.mk
+@@ -12,22 +12,4 @@
+ # See the License for the specific language governing permissions and
+ # limitations under the License.
+ 
+-native_metric_tests := \
+-    binderAddInts \
+-    bionic-benchmarks \
+-    buffer_transport_benchmark \
+-    crashcollector \
+-    hwuimacro \
+-    hwuimicro \
+-    inputflinger_benchmarks \
+-    libandroidfw_benchmarks \
+-    libjavacore-benchmarks \
+-    minikin_perftests \
+-    mmapPerf \
+-    netd_benchmark \
+-    skia_nanobench \
+-    libhwbinder_benchmark
+-
+-ifneq ($(strip $(BOARD_PERFSETUP_SCRIPT)),)
+-native_metric_tests += perf-setup.sh
+-endif
++native_metric_tests := 
+\ No newline at end of file
+diff --git a/build/tasks/tests/native_test_list.mk b/build/tasks/tests/native_test_list.mk
+index b1565ecfd..f1db13325 100644
+--- a/build/tasks/tests/native_test_list.mk
++++ b/build/tasks/tests/native_test_list.mk
+@@ -12,126 +12,4 @@
+ # See the License for the specific language governing permissions and
+ # limitations under the License.
+ 
+-native_tests := \
+-    adbd_test \
+-    audio_health_tests \
+-    backtrace_test \
+-    bionic-unit-tests \
+-    bionic-unit-tests-static \
+-    bluetoothtbd_test \
+-    bluetooth_test_common \
+-    bootstat_tests \
+-    boringssl_crypto_test \
+-    boringssl_ssl_test \
+-    buffer_hub-test \
+-    buffer_hub_queue-test \
+-    buffer_hub_queue_producer-test \
+-    bugreportz_test \
+-    bsdiff_unittest \
+-    camera_client_test \
+-    clatd_test \
+-    confirmationui_invocation_test \
+-    crashcollector \
+-    debuggerd_test \
+-    dumpstate_test \
+-    dumpstate_test_fixture \
+-    dumpsys_test \
+-    dvr_api-test \
+-    dvr_buffer_queue-test \
+-    dvr_display-test \
+-    gpuservice_unittest \
+-    gwp_asan_unittest \
+-    hello_world_test \
+-    hwui_unit_tests \
+-    incident_helper_test \
+-    incidentd_test \
+-    inputflinger_tests \
+-    installd_cache_test \
+-    installd_dexopt_test \
+-    installd_otapreopt_test \
+-    installd_service_test \
+-    installd_utils_test \
+-    JniInvocation_test \
+-    libandroidfw_tests \
+-    libappfuse_test \
+-    libbase_test \
+-    libbpf_android_test \
+-    libcutils_test \
+-    libcutils_test_static \
+-    libgui_test \
+-    libhidl_test \
+-    libinput_tests \
+-    libjavacore-unit-tests \
+-    liblog-unit-tests \
+-    libminijail_unittest_gtest \
+-    libnetdbpf_test \
+-    libprocinfo_test \
+-    libtextclassifier_tests \
+-    libsurfaceflinger_unittest \
+-    libunwindstack_test \
+-    libvintf_test \
+-    linker-unit-tests \
+-    logcat-unit-tests \
+-    logd-unit-tests \
+-    kernel-config-unit-tests \
+-    malloc_debug_unit_tests \
+-    memory_replay_tests \
+-    memunreachable_test \
+-    minadbd_test \
+-    minikin_tests \
+-    mj_system_unittest_gtest \
+-    mj_util_unittest_gtest \
+-    mtp_ffs_handle_test \
+-    net_test_audio_a2dp_hw \
+-    net_test_avrcp \
+-    net_test_bluetooth \
+-    net_test_bta \
+-    net_test_btcore \
+-    net_test_btif \
+-    net_test_btif_profile_queue \
+-    net_test_btpackets \
+-    net_test_btu_message_loop \
+-    net_test_device \
+-    net_test_hci \
+-    net_test_osi \
+-    net_test_performance \
+-    net_test_stack \
+-    net_test_stack_ad_parser \
+-    net_test_stack_multi_adv \
+-    net_test_stack_rfcomm \
+-    net_test_stack_smp \
+-    net_test_types \
+-    netd_integration_test \
+-    netd_unit_test \
+-    netdutils_test \
+-    nfc_test_utils \
+-    perfetto_integrationtests \
+-    posix_async_io_test \
+-    prioritydumper_test \
+-    puffin_unittest \
+-    recovery_unit_test \
+-    resolv_gold_test \
+-    resolv_integration_test \
+-    resolv_unit_test \
+-    scrape_mmap_addr \
+-    simpleperf_cpu_hotplug_test \
+-    simpleperf_unit_test \
+-    statsd_test \
+-    syscall_filter_unittest_gtest \
+-    time-unit-tests \
+-    update_engine_unittests \
+-    vintf_object_test \
+-    wificond_unit_test \
+-    ziparchive-tests \
+-    GraphicBuffer_test \
+-    NeuralNetworksTest_mt_static \
+-    NeuralNetworksTest_operations \
+-    NeuralNetworksTest_static \
+-    NeuralNetworksTest_utils \
+-    SurfaceFlinger_test \
+-    lmkd_unit_test \
+-    vrflinger_test
+-
+-ifeq ($(BOARD_IS_AUTOMOTIVE), true)
+-native_tests += libwatchdog_test
+-endif
++native_tests := 
+\ No newline at end of file
+diff --git a/build/tasks/tests/platform_test_list.mk b/build/tasks/tests/platform_test_list.mk
+index 7ca904749..e69de29bb 100644
+--- a/build/tasks/tests/platform_test_list.mk
++++ b/build/tasks/tests/platform_test_list.mk
+@@ -1,129 +0,0 @@
+-platform_tests += \
+-    ActivityManagerPerfTests \
+-    ActivityManagerPerfTestsStubApp1 \
+-    ActivityManagerPerfTestsStubApp2 \
+-    ActivityManagerPerfTestsStubApp3 \
+-    ActivityManagerPerfTestsTestApp \
+-    AndroidTVJankTests \
+-    ApiDemos \
+-    AppCompatibilityTest \
+-    AppLaunch \
+-    AppLaunchWear \
+-    AppLinkFunctionalTests \
+-    AppLinkTestApp \
+-    AppSmoke \
+-    AppTransitionTests \
+-    AutoLocTestApp \
+-    AutoLocVersionedTestApp_v1 \
+-    AutoLocVersionedTestApp_v2 \
+-    BackgroundDexOptServiceIntegrationTests \
+-    BandwidthEnforcementTest \
+-    BandwidthTests \
+-    BluetoothTests \
+-    BootHelperApp \
+-    BusinessCard \
+-    CalculatorFunctionalTests \
+-    CalendarTests \
+-    camera_client_test \
+-    camera_metadata_tests \
+-    CellBroadcastReceiverTests \
+-    ConnectivityManagerTest \
+-    ContactsTests \
+-    CtsCameraTestCases \
+-    CtsHardwareTestCases \
+-    DataIdleTest \
+-    Development \
+-    DeviceHealthChecks \
+-    DeviceHealthTests \
+-    DynamicCodeLoggerIntegrationTests \
+-    DialerJankTests \
+-    DownloadManagerTestApp \
+-    DummyIME \
+-    ExternalLocAllPermsTestApp \
+-    ExternalLocTestApp \
+-    ExternalLocVersionedTestApp_v1 \
+-    ExternalLocVersionedTestApp_v2 \
+-    ExternalSharedPermsBTTestApp \
+-    ExternalSharedPermsDiffKeyTestApp \
+-    ExternalSharedPermsFLTestApp \
+-    ExternalSharedPermsTestApp \
+-    flatland \
+-    FrameworkPerf \
+-    FrameworkPermissionTests \
+-    FrameworksCoreTests \
+-    FrameworksMockingCoreTests \
+-    FrameworksPrivacyLibraryTests \
+-    FrameworksUtilTests \
+-    InternalLocTestApp \
+-    JankMicroBenchmarkTests \
+-    long_trace_config.textproto \
+-    MemoryUsage \
+-    MultiDexLegacyTestApp \
+-    MultiDexLegacyTestApp2 \
+-    MultiDexLegacyTestServices \
+-    MultiDexLegacyTestServicesTests \
+-    MultiDexLegacyVersionedTestApp_v1 \
+-    MultiDexLegacyVersionedTestApp_v2 \
+-    MultiDexLegacyVersionedTestApp_v3 \
+-    net_test_bluetooth \
+-    net_test_btcore \
+-    net_test_device \
+-    net_test_hci \
+-    net_test_osi \
+-    NoLocTestApp \
+-    NoLocVersionedTestApp_v1 \
+-    NoLocVersionedTestApp_v2 \
+-    NotificationFunctionalTests \
+-    NotificationStressTests \
+-    OverviewFunctionalTests \
+-    perfetto_trace_processor_shell \
+-    PerformanceAppTest \
+-    PerformanceLaunch \
+-    PermissionFunctionalTests \
+-    PermissionTestAppMV1 \
+-    PermissionUtils \
+-    PlatformCommonScenarioTests \
+-    PowerPerfTest \
+-    SettingsUITests \
+-    SimpleServiceTestApp \
+-    SimpleTestApp \
+-    skia_dm \
+-    skia_nanobench \
+-    sl4a \
+-    SmokeTest \
+-    SmokeTestApp \
+-    SysAppJankTestsWear \
+-    TouchLatencyJankTestWear \
+-    trace_config.textproto \
+-    trace_config_detailed.textproto \
+-    trace_config_experimental.textproto \
+-    UbSystemUiJankTests \
+-    UbWebViewJankTests \
+-    UiBench \
+-    UiBenchJankTests \
+-    UiBenchJankTestsWear \
+-    UiBenchMicrobenchmark \
+-    UpdateExternalLocTestApp_v1_ext \
+-    UpdateExternalLocTestApp_v2_none \
+-    UpdateExtToIntLocTestApp_v1_ext \
+-    UpdateExtToIntLocTestApp_v2_int \
+-    VersatileTestApp_Auto \
+-    VersatileTestApp_External \
+-    VersatileTestApp_Internal \
+-    VersatileTestApp_None \
+-    VoiceInteraction \
+-    WifiStrengthScannerUtil \
+-
+-ifneq ($(strip $(BOARD_PERFSETUP_SCRIPT)),)
+-platform_tests += perf-setup.sh
+-endif
+-
+-ifneq ($(filter vsoc_arm vsoc_arm64 vsoc_x86 vsoc_x86_64, $(TARGET_BOARD_PLATFORM)),)
+-  platform_tests += \
+-    CuttlefishRilTests \
+-    CuttlefishWifiTests
+-endif
+-
+-ifeq ($(HOST_OS),linux)
+-platform_tests += root-canal
+-endif
+diff --git a/libraries/car-helpers/multiuser-helper/Android.bp b/libraries/car-helpers/multiuser-helper/Android.bp.disabled
+similarity index 100%
+rename from libraries/car-helpers/multiuser-helper/Android.bp
+rename to libraries/car-helpers/multiuser-helper/Android.bp.disabled
+diff --git a/tests/jank/UbSystemUiJankTests/Android.bp b/tests/jank/UbSystemUiJankTests/Android.bp.disabled
+similarity index 100%
+rename from tests/jank/UbSystemUiJankTests/Android.bp
+rename to tests/jank/UbSystemUiJankTests/Android.bp.disabled
+diff --git a/tests/perf/PerfTransitionTest/Android.bp b/tests/perf/PerfTransitionTest/Android.bp.disabled
+similarity index 100%
+rename from tests/perf/PerfTransitionTest/Android.bp
+rename to tests/perf/PerfTransitionTest/Android.bp.disabled
+-- 
+2.34.1
+

@@ -1,0 +1,31 @@
+From 29d2eb35127666ba4fad96a60d84c7289db19d9b Mon Sep 17 00:00:00 2001
+From: Franz-Josef Haider <frajo@frajo.fi>
+Date: Mon, 29 Dec 2025 14:51:07 +0200
+Subject: [PATCH 1/1] lepton: Disable bpfloader.
+
+Change-Id: I3523c9162a7548fad9309c8871e4e66ed54d9b71
+---
+ bpfloader/bpfloader.rc | 3 ++-
+ 1 file changed, 2 insertions(+), 1 deletion(-)
+
+diff --git a/bpfloader/bpfloader.rc b/bpfloader/bpfloader.rc
+index 04d9b81..66671a4 100644
+--- a/bpfloader/bpfloader.rc
++++ b/bpfloader/bpfloader.rc
+@@ -23,7 +23,7 @@ on load_bpf_programs
+     write /proc/sys/net/core/bpf_jit_enable 1
+     # Enable JIT kallsyms export for privileged users only
+     write /proc/sys/net/core/bpf_jit_kallsyms 1
+-    start bpfloader
++    # start bpfloader
+ 
+ service bpfloader /system/bin/bpfloader
+     capabilities CHOWN SYS_ADMIN
+@@ -60,3 +60,4 @@ service bpfloader /system/bin/bpfloader
+     reboot_on_failure reboot,bpfloader-failed
+     # we're not really updatable, but want to be able to load bpf programs shipped in apexes
+     updatable
++    disabled
+-- 
+2.52.0
+

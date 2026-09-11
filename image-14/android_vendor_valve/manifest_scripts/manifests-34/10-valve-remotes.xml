@@ -1,0 +1,7 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<manifest>
+  <!-- Remotes -->
+  <remote name="steamos_cloud" fetch="https://gitlab.steamos.cloud/" />
+  <remote name="linaro" fetch="https://git.codelinaro.org/" />
+
+</manifest>

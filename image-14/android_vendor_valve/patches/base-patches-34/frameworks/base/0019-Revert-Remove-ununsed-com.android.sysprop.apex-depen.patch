@@ -1,0 +1,26 @@
+From a75ef0616d26aab7c0d39d4c430e02198b02eb28 Mon Sep 17 00:00:00 2001
+From: Franz-Josef Haider <frajo@frajo.fi>
+Date: Wed, 24 Jun 2026 03:48:06 +0300
+Subject: [PATCH 19/22] Revert "Remove ununsed com.android.sysprop.apex
+ dependency"
+
+This reverts commit 57f6a6d7fa98eb88fa6bcaa8ebd1ae5c08643665.
+---
+ Android.bp | 1 +
+ 1 file changed, 1 insertion(+)
+
+diff --git a/Android.bp b/Android.bp
+index e38e685f22c8..f87c20791a13 100644
+--- a/Android.bp
++++ b/Android.bp
+@@ -262,6 +262,7 @@ java_library {
+         "devicepolicyprotosnano",
+         "ImmutabilityAnnotation",
+ 
++        "com.android.sysprop.apex",
+         "com.android.sysprop.init",
+         "com.android.sysprop.localization",
+         "PlatformProperties",
+-- 
+2.55.0
+

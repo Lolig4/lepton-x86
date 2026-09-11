@@ -1,0 +1,16 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<manifest>
+  <!-- These are all projects that we have forked in some way.
+       Note that we replace these with their actual URLs, but in actuality
+       We're just going to rsync them into place.-->
+  
+  <project path="device/waydroid/waydroid" name="valve/waydroid/android_device_valve_waydroid" remote="steamos_cloud" revision="refs/heads/lineage-18.1" />
+  <project path="hardware/waydroid" name="valve/waydroid/android_hardware_waydroid" remote="steamos_cloud" revision="refs/heads/lineage-18.1-new" />
+  <project path="vendor/extra" name="WayDroid/android_vendor_waydroid" remote="ghub" revision="e2619850d7bfd9bf88d2c8a927ea221f6deb9bd7" />
+
+  <!-- Audio -->
+  <project path="external/alsa-lib" name="valve/waydroid/valvedroid/android_external_alsa-lib" remote="steamos_cloud" revision="refs/heads/lineage-17.1" />
+
+  <!-- vulkan 1.3 headers -->
+  <project path="external/vulkan-headers" name="valve/waydroid/vulkan-headers" groups="pdk" remote="steamos_cloud" revision="vulkan-1.3" />
+</manifest>

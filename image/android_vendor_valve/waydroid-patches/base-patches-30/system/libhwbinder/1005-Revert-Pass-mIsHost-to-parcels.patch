@@ -1,0 +1,126 @@
+From 3a89767f706fef6cf8cc472cfaa157b992e5c3e4 Mon Sep 17 00:00:00 2001
+From: Franz-Josef Haider <frajo@frajo.fi>
+Date: Tue, 30 Jun 2026 20:20:41 +0300
+Subject: [PATCH 5/7] Revert "Pass mIsHost to parcels"
+
+This reverts commit ec1e601daf757555bc03014c49956f7ea0d37117.
+---
+ BpHwBinder.cpp            |  2 --
+ Parcel.cpp                | 17 ++++++-----------
+ include/hwbinder/Parcel.h |  3 +--
+ 3 files changed, 7 insertions(+), 15 deletions(-)
+
+diff --git a/BpHwBinder.cpp b/BpHwBinder.cpp
+index 430127d..21b0ad2 100644
+--- a/BpHwBinder.cpp
++++ b/BpHwBinder.cpp
+@@ -105,7 +105,6 @@ status_t BpHwBinder::transact(
+ {
+     // Once a binder has died, it will never come back to life.
+     if (mAlive) {
+-        data.SetIsHost(mIsHostHwBinder);
+         status_t status = IPCThreadState::self(mIsHostHwBinder)->transact(
+             mHandle, code, data, reply, flags);
+ 
+@@ -114,7 +113,6 @@ status_t BpHwBinder::transact(
+         }
+ 
+         if (status == DEAD_OBJECT) mAlive = 0;
+-        reply->SetIsHost(mIsHostHwBinder);
+         return status;
+     }
+ 
+diff --git a/Parcel.cpp b/Parcel.cpp
+index 5c5c5e9..594285f 100644
+--- a/Parcel.cpp
++++ b/Parcel.cpp
+@@ -381,11 +381,6 @@ bool Parcel::enforceInterface(const char* interface) const
+     }
+ }
+ 
+-void Parcel::SetIsHost(bool value) const
+-{
+-    mIsHost = value;
+-}
+-
+ const binder_size_t* Parcel::objects() const
+ {
+     return mObjects;
+@@ -624,7 +619,7 @@ status_t Parcel::writeString16(const char16_t* str, size_t len)
+ }
+ status_t Parcel::writeStrongBinder(const sp<IBinder>& val)
+ {
+-    return flatten_binder(ProcessState::self(mIsHost), val, this);
++    return flatten_binder(ProcessState::self(), val, this);
+ }
+ 
+ template <typename T>
+@@ -645,7 +640,7 @@ restart_write:
+                 const flat_binder_object *fbo = reinterpret_cast<const flat_binder_object*>(hdr);
+                 if (fbo->binder != 0) {
+                     mObjects[mObjectsSize++] = mDataPos;
+-                    acquire_binder_object(ProcessState::self(mIsHost), *fbo, this);
++                    acquire_binder_object(ProcessState::self(), *fbo, this);
+                 }
+                 break;
+             }
+@@ -1207,7 +1202,7 @@ status_t Parcel::readStrongBinder(sp<IBinder>* val) const
+ 
+ status_t Parcel::readNullableStrongBinder(sp<IBinder>* val) const
+ {
+-    return unflatten_binder(ProcessState::self(mIsHost), *this, val);
++    return unflatten_binder(ProcessState::self(), *this, val);
+ }
+ 
+ sp<IBinder> Parcel::readStrongBinder() const
+@@ -1694,7 +1689,7 @@ void Parcel::print(TextOutput& to, uint32_t /*flags*/) const
+ 
+ void Parcel::releaseObjects()
+ {
+-    const sp<ProcessState> proc(ProcessState::self(mIsHost));
++    const sp<ProcessState> proc(ProcessState::self());
+     size_t i = mObjectsSize;
+     uint8_t* const data = mData;
+     binder_size_t* const objects = mObjects;
+@@ -1708,7 +1703,7 @@ void Parcel::releaseObjects()
+ 
+ void Parcel::acquireObjects()
+ {
+-    const sp<ProcessState> proc(ProcessState::self(mIsHost));
++    const sp<ProcessState> proc(ProcessState::self());
+     size_t i = mObjectsSize;
+     uint8_t* const data = mData;
+     binder_size_t* const objects = mObjects;
+@@ -1900,7 +1895,7 @@ status_t Parcel::continueWrite(size_t desired)
+     } else if (mData) {
+         if (objectsSize < mObjectsSize) {
+             // Need to release refs on any objects we are dropping.
+-            const sp<ProcessState> proc(ProcessState::self(mIsHost));
++            const sp<ProcessState> proc(ProcessState::self());
+             for (size_t i=objectsSize; i<mObjectsSize; i++) {
+                 const flat_binder_object* flat
+                     = reinterpret_cast<flat_binder_object*>(mData+mObjects[i]);
+diff --git a/include/hwbinder/Parcel.h b/include/hwbinder/Parcel.h
+index 409ae86..af05190 100644
+--- a/include/hwbinder/Parcel.h
++++ b/include/hwbinder/Parcel.h
+@@ -72,7 +72,6 @@ public:
+     // Parses the RPC header, returning true if the interface name
+     // in the header matches the expected interface from the caller.
+     bool                enforceInterface(const char* interface) const;
+-    void                SetIsHost(bool value) const;
+ 
+     void                freeData();
+ 
+@@ -297,7 +296,7 @@ private:
+ 
+     release_func        mOwner;
+     void*               mOwnerCookie;
+-    mutable bool        mIsHost;
++    bool                mIsHost;
+ };
+ // ---------------------------------------------------------------------------
+ 
+-- 
+2.54.0
+

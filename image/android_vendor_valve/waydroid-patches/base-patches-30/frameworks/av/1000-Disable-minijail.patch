@@ -1,0 +1,36 @@
+From 61a992b20f36118f439ea79aa3e1b1214c571c10 Mon Sep 17 00:00:00 2001
+From: Joshua Ashton <joshua@froggi.es>
+Date: Mon, 15 Apr 2024 23:52:42 +0100
+Subject: [PATCH 1/1] Disable minijail
+
+I'm not going through and fixing this to work with 64-bit syscalls, just nuke this.
+
+We don't need it, we run in a container anyway, Android is not our OS.
+
+Change-Id: Ib8c166b01153c12e3d7f89c253445a3338e9bfdc
+---
+ services/minijail/minijail.cpp | 2 ++
+ 1 file changed, 2 insertions(+)
+
+diff --git a/services/minijail/minijail.cpp b/services/minijail/minijail.cpp
+index c7832b9818..a488f764db 100644
+--- a/services/minijail/minijail.cpp
++++ b/services/minijail/minijail.cpp
+@@ -58,12 +58,14 @@ int WritePolicyToPipe(const std::string& base_policy_content,
+ void SetUpMinijail(const std::string& base_policy_path,
+                    const std::string& additional_policy_path)
+ {
++    return;
+     SetUpMinijailList(base_policy_path, {additional_policy_path});
+ }
+ 
+ void SetUpMinijailList(const std::string& base_policy_path,
+                    const std::vector<std::string>& additional_policy_paths)
+ {
++    return;
+     std::string base_policy_content;
+     std::vector<std::string> additional_policy_contents;
+     if (!base::ReadFileToString(base_policy_path, &base_policy_content,
+-- 
+2.55.0
+

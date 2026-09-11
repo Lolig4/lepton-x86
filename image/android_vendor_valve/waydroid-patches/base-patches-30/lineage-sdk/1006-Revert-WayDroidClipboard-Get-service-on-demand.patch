@@ -1,0 +1,59 @@
+From dd39fc577a80820af6c0337935322a1457f8b98b Mon Sep 17 00:00:00 2001
+From: Franz-Josef Haider <frajo@frajo.fi>
+Date: Mon, 2 Mar 2026 17:37:08 +0200
+Subject: [PATCH 06/11] Revert "WayDroidClipboard: Get service on demand"
+
+This reverts commit 13f90e81cfc63b4cf3b9c1572046d29fa3e44836.
+---
+ sdk/src/java/lineageos/waydroid/Clipboard.java | 15 +++++++++------
+ 1 file changed, 9 insertions(+), 6 deletions(-)
+
+diff --git a/sdk/src/java/lineageos/waydroid/Clipboard.java b/sdk/src/java/lineageos/waydroid/Clipboard.java
+index 3b4972ee..b70e22b0 100644
+--- a/sdk/src/java/lineageos/waydroid/Clipboard.java
++++ b/sdk/src/java/lineageos/waydroid/Clipboard.java
+@@ -36,6 +36,11 @@ public class Clipboard {
+         Context appContext = context.getApplicationContext();
+         mContext = appContext == null ? context : appContext;
+         sService = getService();
++        if (sService == null) {
++            throw new RuntimeException("Unable to get WayDroidService. The service" +
++                    " either crashed, was not started, or the interface has been called to early" +
++                    " in SystemServer init");
++                }
+     }
+ 
+     /**
+@@ -69,12 +74,11 @@ public class Clipboard {
+ 
+     /** @hide **/
+     public void sendClipboardData(String value) {
+-        IClipboard service = getService();
+-        if (service == null) {
++        if (sService == null) {
+             return;
+         }
+         try {
+-            service.sendClipboardData(value);
++            sService.sendClipboardData(value);
+         } catch (RemoteException e) {
+             Log.e(TAG, e.getLocalizedMessage(), e);
+         }
+@@ -82,12 +86,11 @@ public class Clipboard {
+     }
+ 
+     public String getClipboardData() {
+-        IClipboard service = getService();
+-        if (service == null) {
++        if (sService == null) {
+             return "";
+         }
+         try {
+-            return service.getClipboardData();
++            return sService.getClipboardData();
+         } catch (RemoteException e) {
+             Log.e(TAG, e.getLocalizedMessage(), e);
+         }
+-- 
+2.53.0
+

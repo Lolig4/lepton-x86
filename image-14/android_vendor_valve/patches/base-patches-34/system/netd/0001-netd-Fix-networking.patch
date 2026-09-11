@@ -1,0 +1,190 @@
+From 9decc6a835cd273b55fff976ab49839cd1a8d85a Mon Sep 17 00:00:00 2001
+From: Ziyang Zhou <ziyang.zhou@outlook.com>
+Date: Mon, 26 Apr 2021 23:09:01 +0800
+Subject: [PATCH] netd: Fix networking
+
+Change-Id: Ia750206a3f1498627f3e34986808b23577cad1c9
+---
+ server/Controllers.cpp               |  5 ++-
+ server/Controllers.h                 |  2 +-
+ server/IptablesRestoreController.cpp |  3 ++
+ server/NetdNativeService.cpp         | 67 +++++++++++++++++-----------
+ 4 files changed, 49 insertions(+), 28 deletions(-)
+
+diff --git a/server/Controllers.cpp b/server/Controllers.cpp
+index 87b2c55d..e5284065 100644
+--- a/server/Controllers.cpp
++++ b/server/Controllers.cpp
+@@ -287,7 +287,7 @@ void Controllers::initIptablesRules() {
+      * Does REJECT in INPUT, OUTPUT. Does counting also.
+      * No DROP/REJECT allowed later in netfilter-flow hook order.
+      */
+-    bandwidthCtrl.setupIptablesHooks();
++    //bandwidthCtrl.setupIptablesHooks();
+     gLog.info("Setting up BandwidthController hooks: %" PRId64 "us", s.getTimeAndResetUs());
+ 
+     /*
+@@ -314,7 +314,7 @@ void Controllers::init() {
+     initIptablesRules();
+     Stopwatch s;
+ 
+-    if (int ret = bandwidthCtrl.enableBandwidthControl()) {
++    /*if (int ret = bandwidthCtrl.enableBandwidthControl()) {
+         gLog.error("Failed to initialize BandwidthController (%s)", strerror(-ret));
+         // A failure to init almost definitely means that iptables failed to load
+         // our static ruleset, which then basically means network accounting will not work.
+@@ -323,6 +323,7 @@ void Controllers::init() {
+         // a mainline update breaking things.
+         exit(1);
+     }
++    */
+     gLog.info("Enabling bandwidth control: %" PRId64 "us", s.getTimeAndResetUs());
+ 
+     if (int ret = RouteController::Init(NetworkController::LOCAL_NET_ID)) {
+diff --git a/server/Controllers.h b/server/Controllers.h
+index 8b51ddf1..127b3318 100644
+--- a/server/Controllers.h
++++ b/server/Controllers.h
+@@ -42,7 +42,7 @@ class Controllers {
+     NetworkController netCtrl;
+     TetherController tetherCtrl;
+     PppController pppCtrl;
+-    BandwidthController bandwidthCtrl;
++    //BandwidthController bandwidthCtrl;
+     IdletimerController idletimerCtrl;
+     FirewallController firewallCtrl;
+     StrictController strictCtrl;
+diff --git a/server/IptablesRestoreController.cpp b/server/IptablesRestoreController.cpp
+index d0aaa638..2a56c5e1 100644
+--- a/server/IptablesRestoreController.cpp
++++ b/server/IptablesRestoreController.cpp
+@@ -107,6 +107,7 @@ IptablesRestoreController::~IptablesRestoreController() {
+ }
+ 
+ void IptablesRestoreController::Init() {
++    return;
+     // We cannot fork these in parallel or a child process could inherit the pipe fds intended for
+     // use by the other child process. see https://android-review.googlesource.com/469559 for what
+     // breaks. This does not cause a latency hit, because the parent only has to wait for
+@@ -190,6 +191,7 @@ IptablesProcess* IptablesRestoreController::forkAndExec(const IptablesProcessTyp
+ int IptablesRestoreController::sendCommand(const IptablesProcessType type,
+                                            const std::string& command,
+                                            std::string *output) {
++   if (1) return 0;
+    std::unique_ptr<IptablesProcess> *process =
+            (type == IPTABLES_PROCESS) ? &mIpRestore : &mIp6Restore;
+ 
+@@ -330,6 +332,7 @@ bool IptablesRestoreController::drainAndWaitForAck(const std::unique_ptr<Iptable
+ 
+ int IptablesRestoreController::execute(const IptablesTarget target, const std::string& command,
+                                        std::string *output) {
++    if (1) return 0;
+     std::lock_guard lock(mLock);
+ 
+     std::string buffer;
+diff --git a/server/NetdNativeService.cpp b/server/NetdNativeService.cpp
+index d3b48ee8..4f196bef 100644
+--- a/server/NetdNativeService.cpp
++++ b/server/NetdNativeService.cpp
+@@ -214,42 +214,56 @@ binder::Status NetdNativeService::firewallReplaceUidChain(const std::string&, bo
+ }
+ 
+ binder::Status NetdNativeService::bandwidthEnableDataSaver(bool enable, bool *ret) {
+-    NETD_LOCKING_RPC(gCtls->bandwidthCtrl.lock, PERM_NETWORK_STACK, PERM_MAINLINE_NETWORK_STACK);
+-    int err = gCtls->bandwidthCtrl.enableDataSaver(enable);
+-    *ret = (err == 0);
++//    NETD_LOCKING_RPC(gCtls->bandwidthCtrl.lock, PERM_NETWORK_STACK, PERM_MAINLINE_NETWORK_STACK);
++//    int err = gCtls->bandwidthCtrl.enableDataSaver(enable);
++//    *ret = (err == 0);
++    (void)enable;
++    (void)ret;
+     return binder::Status::ok();
+ }
+ 
+ binder::Status NetdNativeService::bandwidthSetInterfaceQuota(const std::string& ifName,
+                                                              int64_t bytes) {
+-    NETD_LOCKING_RPC(gCtls->bandwidthCtrl.lock, PERM_NETWORK_STACK, PERM_MAINLINE_NETWORK_STACK);
+-    int res = gCtls->bandwidthCtrl.setInterfaceQuota(ifName, bytes);
+-    return statusFromErrcode(res);
++//    NETD_LOCKING_RPC(gCtls->bandwidthCtrl.lock, PERM_NETWORK_STACK, PERM_MAINLINE_NETWORK_STACK);
++//    int res = gCtls->bandwidthCtrl.setInterfaceQuota(ifName, bytes);
++//    return statusFromErrcode(res);
++    (void)ifName;
++    (void)bytes;
++    return statusFromErrcode(0);
+ }
+ 
+ binder::Status NetdNativeService::bandwidthRemoveInterfaceQuota(const std::string& ifName) {
+-    NETD_LOCKING_RPC(gCtls->bandwidthCtrl.lock, PERM_NETWORK_STACK, PERM_MAINLINE_NETWORK_STACK);
+-    int res = gCtls->bandwidthCtrl.removeInterfaceQuota(ifName);
+-    return statusFromErrcode(res);
++//    NETD_LOCKING_RPC(gCtls->bandwidthCtrl.lock, PERM_NETWORK_STACK, PERM_MAINLINE_NETWORK_STACK);
++//    int res = gCtls->bandwidthCtrl.removeInterfaceQuota(ifName);
++//    return statusFromErrcode(res);
++    (void)ifName;
++    return statusFromErrcode(0);
+ }
+ 
+ binder::Status NetdNativeService::bandwidthSetInterfaceAlert(const std::string& ifName,
+                                                              int64_t bytes) {
+-    NETD_LOCKING_RPC(gCtls->bandwidthCtrl.lock, PERM_NETWORK_STACK, PERM_MAINLINE_NETWORK_STACK);
+-    int res = gCtls->bandwidthCtrl.setInterfaceAlert(ifName, bytes);
+-    return statusFromErrcode(res);
++//    NETD_LOCKING_RPC(gCtls->bandwidthCtrl.lock, PERM_NETWORK_STACK, PERM_MAINLINE_NETWORK_STACK);
++//    int res = gCtls->bandwidthCtrl.setInterfaceAlert(ifName, bytes);
++//    return statusFromErrcode(res);
++    (void)ifName;
++    (void)bytes;
++    return statusFromErrcode(0);
+ }
+ 
+ binder::Status NetdNativeService::bandwidthRemoveInterfaceAlert(const std::string& ifName) {
+-    NETD_LOCKING_RPC(gCtls->bandwidthCtrl.lock, PERM_NETWORK_STACK, PERM_MAINLINE_NETWORK_STACK);
+-    int res = gCtls->bandwidthCtrl.removeInterfaceAlert(ifName);
+-    return statusFromErrcode(res);
++//    NETD_LOCKING_RPC(gCtls->bandwidthCtrl.lock, PERM_NETWORK_STACK, PERM_MAINLINE_NETWORK_STACK);
++//    int res = gCtls->bandwidthCtrl.removeInterfaceAlert(ifName);
++//    return statusFromErrcode(res);
++    (void)ifName;
++    return statusFromErrcode(0);
+ }
+ 
+ binder::Status NetdNativeService::bandwidthSetGlobalAlert(int64_t bytes) {
+-    NETD_LOCKING_RPC(gCtls->bandwidthCtrl.lock, PERM_NETWORK_STACK, PERM_MAINLINE_NETWORK_STACK);
+-    int res = gCtls->bandwidthCtrl.setGlobalAlert(bytes);
+-    return statusFromErrcode(res);
++//    NETD_LOCKING_RPC(gCtls->bandwidthCtrl.lock, PERM_NETWORK_STACK, PERM_MAINLINE_NETWORK_STACK);
++//    int res = gCtls->bandwidthCtrl.setGlobalAlert(bytes);
++//    return statusFromErrcode(res);
++    (void)bytes;
++    return statusFromErrcode(0);
+ }
+ 
+ binder::Status NetdNativeService::bandwidthAddNaughtyApp(int32_t) {
+@@ -457,13 +471,16 @@ std::vector<std::string> tetherStatsParcelVecToStringVec(std::vector<TetherStats
+ 
+ binder::Status NetdNativeService::tetherGetStats(
+         std::vector<TetherStatsParcel>* tetherStatsParcelVec) {
+-    NETD_LOCKING_RPC(gCtls->tetherCtrl.lock, PERM_NETWORK_STACK, PERM_MAINLINE_NETWORK_STACK);
+-    const auto& statsList = gCtls->tetherCtrl.getTetherStats();
+-    if (!isOk(statsList)) {
+-        return asBinderStatus(statsList);
+-    }
+-    setTetherStatsParcelVecByInterface(tetherStatsParcelVec, statsList.value());
+-    auto statsResults = tetherStatsParcelVecToStringVec(tetherStatsParcelVec);
++//    NETD_LOCKING_RPC(gCtls->tetherCtrl.lock, PERM_NETWORK_STACK, PERM_MAINLINE_NETWORK_STACK);
++//    const auto& statsList = gCtls->tetherCtrl.getTetherStats();
++//    if (!isOk(statsList)) {
++//        return asBinderStatus(statsList);
++//    }
++//    setTetherStatsParcelVecByInterface(tetherStatsParcelVec, statsList.value());
++//    auto statsResults = tetherStatsParcelVecToStringVec(tetherStatsParcelVec);
++    (void)setTetherStatsParcelVecByInterface;
++    (void)tetherStatsParcelVecToStringVec;
++    (void)tetherStatsParcelVec;
+     return binder::Status::ok();
+ }
+ 
+-- 
+2.55.0
+

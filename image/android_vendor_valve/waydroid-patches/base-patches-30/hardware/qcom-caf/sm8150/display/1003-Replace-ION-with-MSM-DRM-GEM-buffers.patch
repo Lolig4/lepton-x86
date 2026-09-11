@@ -1,0 +1,288 @@
+From c479a789b6f30e47a754ef3cdf1a88a7bc58c03f Mon Sep 17 00:00:00 2001
+From: Mark Collins <mark@igalia.com>
+Date: Thu, 24 Apr 2025 14:30:07 +0000
+Subject: [PATCH 3/5] Replace ION with MSM DRM GEM buffers
+
+This uses Android's ION uAPI which is unavailable on the host kernel
+so it's now replaced with calls to MSM DRM's GEM uAPI instead.
+---
+ gralloc/gr_allocator.cpp | 97 ++--------------------------------------
+ gralloc/gr_ion_alloc.cpp | 80 +++++++++++++++++++++++----------
+ gralloc/gr_ion_alloc.h   |  2 +-
+ 3 files changed, 62 insertions(+), 117 deletions(-)
+
+diff --git a/gralloc/gr_allocator.cpp b/gralloc/gr_allocator.cpp
+index a8073195fc..cfceb4c870 100644
+--- a/gralloc/gr_allocator.cpp
++++ b/gralloc/gr_allocator.cpp
+@@ -38,46 +38,6 @@
+ 
+ #include "qd_utils.h"
+ 
+-#ifndef ION_FLAG_CP_PIXEL
+-#define ION_FLAG_CP_PIXEL 0
+-#endif
+-
+-#ifndef ION_FLAG_ALLOW_NON_CONTIG
+-#define ION_FLAG_ALLOW_NON_CONTIG 0
+-#endif
+-
+-#ifndef ION_FLAG_CP_CAMERA_PREVIEW
+-#define ION_FLAG_CP_CAMERA_PREVIEW 0
+-#endif
+-
+-#ifndef ION_SECURE
+-#define ION_SECURE ION_FLAG_SECURE
+-#endif
+-
+-#ifndef ION_FLAG_CP_CDSP
+-#define ION_FLAG_CP_CDSP 0
+-#endif
+-
+-#ifdef SLAVE_SIDE_CP
+-#define CP_HEAP_ID ION_CP_MM_HEAP_ID
+-#define SD_HEAP_ID CP_HEAP_ID
+-#define ION_CP_FLAGS (ION_SECURE | ION_FLAG_ALLOW_NON_CONTIG)
+-#define ION_SD_FLAGS ION_SECURE
+-#define ION_SC_FLAGS ION_SECURE
+-#define ION_SC_PREVIEW_FLAGS ION_SECURE
+-#else  // MASTER_SIDE_CP
+-#ifdef HYPERVISOR
+-#define CP_HEAP_ID ION_SECURE_DISPLAY_HEAP_ID
+-#else
+-#define CP_HEAP_ID ION_SECURE_HEAP_ID
+-#endif
+-#define SD_HEAP_ID ION_SECURE_DISPLAY_HEAP_ID
+-#define ION_CP_FLAGS (ION_SECURE | ION_FLAG_CP_PIXEL)
+-#define ION_SD_FLAGS (ION_SECURE | ION_FLAG_CP_SEC_DISPLAY)
+-#define ION_SC_FLAGS (ION_SECURE | ION_FLAG_CP_CAMERA)
+-#define ION_SC_PREVIEW_FLAGS (ION_SECURE | ION_FLAG_CP_CAMERA_PREVIEW)
+-#endif
+-
+ using std::shared_ptr;
+ using std::vector;
+ 
+@@ -198,60 +158,11 @@ bool Allocator::CheckForBufferSharing(uint32_t num_descriptors,
+   return true;
+ }
+ 
+-void Allocator::GetIonHeapInfo(uint64_t usage, unsigned int *ion_heap_id, unsigned int *alloc_type,
++void Allocator::GetIonHeapInfo(uint64_t, unsigned int *ion_heap_id, unsigned int *alloc_type,
+                                unsigned int *ion_flags) {
+-  unsigned int heap_id = 0;
+-  unsigned int type = 0;
+-  uint32_t flags = 0;
+-  if (usage & GRALLOC_USAGE_PROTECTED) {
+-    if (usage & GRALLOC_USAGE_PRIVATE_SECURE_DISPLAY) {
+-      heap_id = ION_HEAP(SD_HEAP_ID);
+-      /*
+-       * There is currently no flag in ION for Secure Display
+-       * VM. Please add it to the define once available.
+-       */
+-      flags |= UINT(ION_SD_FLAGS);
+-    } else if (usage & BufferUsage::CAMERA_OUTPUT) {
+-      heap_id = ION_HEAP(SD_HEAP_ID);
+-      if (usage & GRALLOC_USAGE_PRIVATE_CDSP) {
+-        flags |= UINT(ION_SECURE | ION_FLAG_CP_CDSP);
+-      }
+-      if (usage & BufferUsage::COMPOSER_OVERLAY) {
+-        flags |= UINT(ION_SC_PREVIEW_FLAGS);
+-      } else {
+-        flags |= UINT(ION_SC_FLAGS);
+-      }
+-    } else if (usage & GRALLOC_USAGE_PRIVATE_CDSP) {
+-      heap_id = ION_HEAP(ION_SECURE_CARVEOUT_HEAP_ID);
+-      flags |= UINT(ION_SECURE | ION_FLAG_CP_CDSP);
+-    } else {
+-      heap_id = ION_HEAP(CP_HEAP_ID);
+-      flags |= UINT(ION_CP_FLAGS);
+-    }
+-  }
+-
+-  if (usage & BufferUsage::SENSOR_DIRECT_DATA) {
+-      if (use_system_heap_for_sensors_) {
+-        ALOGI("gralloc::sns_direct_data with system_heap");
+-        heap_id |= ION_HEAP(ION_SYSTEM_HEAP_ID);
+-      } else {
+-        ALOGI("gralloc::sns_direct_data with adsp_heap");
+-        heap_id |= ION_HEAP(ION_ADSP_HEAP_ID);
+-      }
+-  }
+-
+-  if (flags & UINT(ION_SECURE)) {
+-    type |= private_handle_t::PRIV_FLAGS_SECURE_BUFFER;
+-  }
+-
+-  // if no ion heap flags are set, default to system heap
+-  if (!heap_id) {
+-    heap_id = ION_HEAP(ION_SYSTEM_HEAP_ID);
+-  }
+-
+-  *alloc_type = type;
+-  *ion_flags = flags;
+-  *ion_heap_id = heap_id;
++  *alloc_type = 0;
++  *ion_flags = 0;
++  *ion_heap_id = 0xFFFFFFFF;
+ 
+   return;
+ }
+diff --git a/gralloc/gr_ion_alloc.cpp b/gralloc/gr_ion_alloc.cpp
+index a9e06da833..5ee3d9406f 100644
+--- a/gralloc/gr_ion_alloc.cpp
++++ b/gralloc/gr_ion_alloc.cpp
+@@ -27,15 +27,18 @@
+  * IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
+  */
+ 
++#define TARGET_ION_ABI_VERSION 2
++
+ #define DEBUG 0
+ #define ATRACE_TAG (ATRACE_TAG_GRAPHICS | ATRACE_TAG_HAL)
+ #include <sys/ioctl.h>
+ #include <sys/mman.h>
+-#include <linux/msm_ion.h>
+ #if TARGET_ION_ABI_VERSION >= 2
+ #include <linux/dma-buf.h>
++#include <drm/msm_drm.h>
+ #include <ion/ion.h>
+ #endif
++#include <unistd.h>
+ #include <stdlib.h>
+ #include <fcntl.h>
+ #include <log/log.h>
+@@ -65,65 +68,96 @@ bool IonAlloc::Init() {
+ }
+ 
+ #if TARGET_ION_ABI_VERSION >= 2  // Use libion APIs for new ion
+-
+ int IonAlloc::OpenIonDevice() {
+-  return ion_open();
++  int fd = open("/dev/dri/renderD128", O_RDWR | O_CLOEXEC);
++  if (fd < 0) {
++    ALOGE("Failed to open MSM DRM device: %s", strerror(errno));
++  }
++  return fd;
+ }
+ 
+ void IonAlloc::CloseIonDevice() {
+   if (ion_dev_fd_ > FD_INIT) {
+-    ion_close(ion_dev_fd_);
++    close(ion_dev_fd_);
+   }
+-
+   ion_dev_fd_ = FD_INIT;
+ }
+ 
+ int IonAlloc::AllocBuffer(AllocData *data) {
+   ATRACE_CALL();
+-  int err = 0;
+   int fd = -1;
+-  unsigned int flags = data->flags;
+-
+-  flags |= data->uncached ? 0 : ION_FLAG_CACHED;
+ 
+   std::string tag_name{};
+   if (ATRACE_ENABLED()) {
+-    tag_name = "libion alloc size: " + std::to_string(data->size);
++    tag_name = "MSM GEM alloc size: " + std::to_string(data->size);
+   }
+ 
+   ATRACE_BEGIN(tag_name.c_str());
+-  err = ion_alloc_fd(ion_dev_fd_, data->size, data->align, data->heap_id, flags, &fd);
+-  ATRACE_END();
+-  if (err) {
+-    ALOGE("libion alloc failed ion_fd %d size %d align %d heap_id %x flags %x",
+-          ion_dev_fd_, data->size, data->align, data->heap_id, flags);
+-    return err;
++
++  struct drm_msm_gem_new req = {
++      .size = data->size,
++      .flags = UINT(0x080000)
++  };
++
++  if (ioctl(ion_dev_fd_, INT(DRM_IOCTL_MSM_GEM_NEW), &req) < 0) {
++    ATRACE_END();
++    ALOGE("MSM DRM GEM allocation failed, size %d, error: %s", data->size, strerror(errno));
++    return -errno;
+   }
+ 
++  struct drm_prime_handle prime_req = {
++      .handle = req.handle,
++      .flags = DRM_RDWR | DRM_CLOEXEC,
++      .fd = -1
++  };
++
++  if (ioctl(ion_dev_fd_, INT(DRM_IOCTL_PRIME_HANDLE_TO_FD), &prime_req) < 0) {
++    ATRACE_END();
++    ALOGE("Failed to export GEM buffer to DMABUF, error: %s", strerror(errno));
++    return -errno;
++  }
++
++  fd = prime_req.fd;
++  ATRACE_END();
++
+   data->fd = fd;
+-  data->ion_handle = fd;  // For new ion api ion_handle does not exists so reusing fd for now
+-  ALOGD_IF(DEBUG, "libion: Allocated buffer size:%u fd:%d", data->size, data->fd);
++  data->ion_handle = req.handle;  // Store the GEM handle
++  ALOGD_IF(DEBUG, "MSM DRM: Allocated buffer size:%u fd:%d handle:%d", data->size, data->fd, data->ion_handle);
+ 
+   return 0;
+ }
+ 
+-int IonAlloc::FreeBuffer(void *base, unsigned int size, unsigned int offset, int fd,
+-                         int /*ion_handle*/) {
++int IonAlloc::FreeBuffer(void *base, unsigned int size, unsigned int offset, int fd, int ion_handle) {
+   ATRACE_CALL();
+   int err = 0;
+-  ALOGD_IF(DEBUG, "libion: Freeing buffer base:%p size:%u fd:%d", base, size, fd);
++  ALOGD_IF(DEBUG, "MSM DRM: Freeing buffer base:%p size:%u fd:%d handle:%d", base, size, fd, ion_handle);
+ 
+   if (base) {
+     err = UnmapBuffer(base, size, offset);
+   }
+ 
++  if (ion_handle > 0) {
++    struct drm_gem_close close_req = { .handle = static_cast<uint32_t>(ion_handle) };
++    if (ioctl(ion_dev_fd_, INT(DRM_IOCTL_GEM_CLOSE), &close_req) < 0) {
++      ALOGE("Failed to close GEM handle %d, error: %s", ion_handle, strerror(errno));
++    }
++  }
++
+   close(fd);
+   return err;
+ }
+ 
+ int IonAlloc::ImportBuffer(int fd) {
+-  // For new ion api ion_handle does not exists so reusing fd for now
+-  return fd;
++  struct drm_prime_handle import_req = {
++      .fd = fd
++  };
++
++  if (ioctl(ion_dev_fd_, INT(DRM_IOCTL_PRIME_FD_TO_HANDLE), &import_req) < 0) {
++    ALOGE("Failed to import DMABUF into MSM DRM, error: %s", strerror(errno));
++    return -1;
++  }
++
++  return import_req.handle;  // Return GEM handle
+ }
+ 
+ int IonAlloc::CleanBuffer(void */*base*/, unsigned int /*size*/, unsigned int /*offset*/,
+diff --git a/gralloc/gr_ion_alloc.h b/gralloc/gr_ion_alloc.h
+index 8cb15684ca..b2c58c5e1d 100644
+--- a/gralloc/gr_ion_alloc.h
++++ b/gralloc/gr_ion_alloc.h
+@@ -30,7 +30,7 @@
+ #ifndef __GR_ION_ALLOC_H__
+ #define __GR_ION_ALLOC_H__
+ 
+-#include <linux/msm_ion.h>
++#define TARGET_ION_ABI_VERSION 2
+ 
+ #define FD_INIT -1
+ 
+-- 
+2.48.1
+

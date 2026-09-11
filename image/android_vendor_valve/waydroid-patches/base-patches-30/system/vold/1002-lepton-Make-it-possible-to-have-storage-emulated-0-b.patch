@@ -1,0 +1,76 @@
+From 4a835f5c318cd5de19e6d0976525d4c672b2af7d Mon Sep 17 00:00:00 2001
+From: Franz-Josef Haider <frajo@frajo.fi>
+Date: Thu, 6 Aug 2026 19:50:09 +0300
+Subject: [PATCH 1/1] lepton: Make it possible to have /storage/emulated/0 be a
+ symlink.
+
+Change-Id: I324617da3c7732adc96ac5530f56e343e24d1957
+---
+ Utils.cpp                | 3 ++-
+ model/EmulatedVolume.cpp | 6 ++++++
+ 2 files changed, 8 insertions(+), 1 deletion(-)
+
+diff --git a/Utils.cpp b/Utils.cpp
+index c675105..417af81 100644
+--- a/Utils.cpp
++++ b/Utils.cpp
+@@ -556,7 +556,8 @@ status_t KillProcessesUsingPath(const std::string& path) {
+ 
+ status_t BindMount(const std::string& source, const std::string& target) {
+     if (UnmountTree(target) < 0) {
+-        return -errno;
++        // Lepton: this may fail due to host bind mounts
++        //return -errno;
+     }
+     if (TEMP_FAILURE_RETRY(mount(source.c_str(), target.c_str(), nullptr, MS_BIND | MS_REC, nullptr)) < 0) {
+         PLOG(ERROR) << "Failed to bind mount " << source << " to " << target;
+diff --git a/model/EmulatedVolume.cpp b/model/EmulatedVolume.cpp
+index e96d1e4..5126773 100644
+--- a/model/EmulatedVolume.cpp
++++ b/model/EmulatedVolume.cpp
+@@ -116,6 +116,7 @@ status_t EmulatedVolume::mountFuseBindMounts() {
+     }
+ 
+     status_t status = OK;
++#if 0
+     // When app data isolation is enabled, obb/ will be mounted per app, otherwise we should
+     // bind mount the whole Android/ to speed up reading.
+     if (!mAppDataIsolationEnabled) {
+@@ -135,6 +136,7 @@ status_t EmulatedVolume::mountFuseBindMounts() {
+             return status;
+         }
+     }
++#endif
+ 
+     // Installers get the same view as all other apps, with the sole exception that the
+     // OBB dirs (Android/obb) are writable to them. On sdcardfs devices, this requires
+@@ -150,6 +152,7 @@ status_t EmulatedVolume::mountFuseBindMounts() {
+         if (status != OK) {
+             return status;
+         }
++#if 0
+     } else if (mAppDataIsolationEnabled) {
+         std::string obbSource(StringPrintf("%s/obb", androidSource.c_str()));
+         std::string obbInstallerTarget(StringPrintf("/mnt/installer/%d/%s/%d/Android/obb",
+@@ -159,8 +162,10 @@ status_t EmulatedVolume::mountFuseBindMounts() {
+         if (status != OK) {
+             return status;
+         }
++#endif
+     }
+ 
++#if 0
+     // /mnt/androidwriteable is similar to /mnt/installer, but it's for
+     // MOUNT_EXTERNAL_ANDROID_WRITABLE apps and it can also access DATA (Android/data) dirs.
+     if (mAppDataIsolationEnabled) {
+@@ -188,6 +193,7 @@ status_t EmulatedVolume::mountFuseBindMounts() {
+             return status;
+         }
+     }
++#endif
+     unmount_guard.Disable();
+     return OK;
+ }
+-- 
+2.55.0
+

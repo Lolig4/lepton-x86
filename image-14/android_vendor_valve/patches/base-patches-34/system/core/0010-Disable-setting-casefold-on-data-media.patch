@@ -1,0 +1,31 @@
+From a38cb5bea1abc872e161bab27067d37a6c8d2593 Mon Sep 17 00:00:00 2001
+From: SteamOS Waydroid Builder <waydroid-builder@steamos.cloud>
+Date: Wed, 24 Sep 2025 18:56:03 +0000
+Subject: [PATCH 10/21] Disable setting casefold on `/data/media`
+
+This allows us to use the recently-merged overlayfs patches that allow
+using casefold-capable layers (but not mixing casefold-enabled and
+casefold-disabled layers).
+
+Change-Id: I6041b19ab0a9dd65eb1e3c6b452d7646d5fda96c
+---
+ rootdir/init.rc | 3 ++-
+ 1 file changed, 2 insertions(+), 1 deletion(-)
+
+diff --git a/rootdir/init.rc b/rootdir/init.rc
+index 0359b4010f..d386ba7283 100644
+--- a/rootdir/init.rc
++++ b/rootdir/init.rc
+@@ -969,7 +969,8 @@ on post-fs-data
+     # Set the casefold flag on /data/media.  For upgrades, a restorecon can be
+     # needed first to relabel the directory from media_rw_data_file.
+     restorecon /data/media
+-    exec - media_rw media_rw -- /system/bin/chattr +F /data/media
++    # Don't set casefold on for /data/media, because our overlayfs doesn't support it!
++    #exec - media_rw media_rw -- /system/bin/chattr +F /data/media
+ 
+     # A tmpfs directory, which will contain all apps and sdk sandbox CE and DE
+     # data directory that bind mount from the original source.
+-- 
+2.55.0
+

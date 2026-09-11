@@ -1,0 +1,8 @@
+{
+    "file_format_version": "1.0.0",
+    "runtime": {
+       "name": "steamvr",
+       "VALVE_runtime_is_steamvr" : true,
+       "library_path": "/data/steamvr/runtime/bin/androidarm64/vrclient.so"
+    }
+}

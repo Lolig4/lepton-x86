@@ -1,0 +1,52 @@
+From fa236883c8ce4be9923b67f840b9ebcfa8e65c6b Mon Sep 17 00:00:00 2001
+From: Franz-Josef Haider <frajo@frajo.fi>
+Date: Fri, 19 Jun 2026 16:01:50 +0300
+Subject: [PATCH 14/21] lepton: Reboot if zygote fails.
+
+Change-Id: Ief904a4f7f19b4028d23e8a7253baa508eaa700a
+---
+ rootdir/init.zygote32.rc    | 2 +-
+ rootdir/init.zygote64.rc    | 2 +-
+ rootdir/init.zygote64_32.rc | 2 +-
+ 3 files changed, 3 insertions(+), 3 deletions(-)
+
+diff --git a/rootdir/init.zygote32.rc b/rootdir/init.zygote32.rc
+index 442bd153f5..0579e50b7b 100644
+--- a/rootdir/init.zygote32.rc
++++ b/rootdir/init.zygote32.rc
+@@ -13,7 +13,7 @@ service zygote /system/bin/app_process -Xzygote /system/bin --zygote --start-sys
+     onrestart restart audioserver
+     onrestart restart cameraserver
+     onrestart restart media
+-    onrestart restart --only-if-running media.tuner
++    reboot_on_failure reboot
+     onrestart restart netd
+     onrestart restart wificond
+     task_profiles ProcessCapacityHigh
+diff --git a/rootdir/init.zygote64.rc b/rootdir/init.zygote64.rc
+index 342212123d..842d3df82f 100644
+--- a/rootdir/init.zygote64.rc
++++ b/rootdir/init.zygote64.rc
+@@ -13,7 +13,7 @@ service zygote /system/bin/app_process64 -Xzygote /system/bin --zygote --start-s
+     onrestart restart audioserver
+     onrestart restart cameraserver
+     onrestart restart media
+-    onrestart restart --only-if-running media.tuner
++    reboot_on_failure reboot
+     onrestart restart netd
+     onrestart restart wificond
+     task_profiles ProcessCapacityHigh MaxPerformance
+diff --git a/rootdir/init.zygote64_32.rc b/rootdir/init.zygote64_32.rc
+index 109bf6c65c..e478c74cc2 100644
+--- a/rootdir/init.zygote64_32.rc
++++ b/rootdir/init.zygote64_32.rc
+@@ -7,5 +7,5 @@ service zygote_secondary /system/bin/app_process32 -Xzygote /system/bin --zygote
+     group root readproc reserved_disk
+     socket zygote_secondary stream 660 root system
+     socket usap_pool_secondary stream 660 root system
+-    onrestart restart zygote
++    reboot_on_failure reboot
+     task_profiles ProcessCapacityHigh MaxPerformance
+-- 
+2.55.0
+

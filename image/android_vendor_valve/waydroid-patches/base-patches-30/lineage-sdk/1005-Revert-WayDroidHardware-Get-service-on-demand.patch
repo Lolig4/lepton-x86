@@ -1,0 +1,104 @@
+From c002edf15b49eaa7e8b5fa803d6f883e672c751f Mon Sep 17 00:00:00 2001
+From: Franz-Josef Haider <frajo@frajo.fi>
+Date: Mon, 2 Mar 2026 17:36:58 +0200
+Subject: [PATCH 05/11] Revert "WayDroidHardware: Get service on demand"
+
+This reverts commit be7a77d288fa49f9df43ed1e0c0abbe9852589aa.
+---
+ sdk/src/java/lineageos/waydroid/Hardware.java | 30 +++++++++----------
+ 1 file changed, 15 insertions(+), 15 deletions(-)
+
+diff --git a/sdk/src/java/lineageos/waydroid/Hardware.java b/sdk/src/java/lineageos/waydroid/Hardware.java
+index 0d25459a..48d6f541 100644
+--- a/sdk/src/java/lineageos/waydroid/Hardware.java
++++ b/sdk/src/java/lineageos/waydroid/Hardware.java
+@@ -41,6 +41,11 @@ public class Hardware {
+         Context appContext = context.getApplicationContext();
+         mContext = appContext == null ? context : appContext;
+         sService = getService();
++        if (sService == null) {
++            throw new RuntimeException("Unable to get WayDroidService. The service" +
++                    " either crashed, was not started, or the interface has been called to early" +
++                    " in SystemServer init");
++                }
+     }
+ 
+     /**
+@@ -74,12 +79,11 @@ public class Hardware {
+ 
+     /** @hide **/
+     public int enableNFC(boolean enable) {
+-        IHardware service = getService();
+-        if (service == null) {
++        if (sService == null) {
+             return ERROR_UNDEFINED;
+         }
+         try {
+-            return service.enableNFC(enable);
++            return sService.enableNFC(enable);
+         } catch (RemoteException e) {
+             Log.e(TAG, e.getLocalizedMessage(), e);
+         }
+@@ -87,12 +91,11 @@ public class Hardware {
+     }
+ 
+     public int enableBluetooth(boolean enable) {
+-        IHardware service = getService();
+-        if (service == null) {
++        if (sService == null) {
+             return ERROR_UNDEFINED;
+         }
+         try {
+-            return service.enableBluetooth(enable);
++            return sService.enableBluetooth(enable);
+         } catch (RemoteException e) {
+             Log.e(TAG, e.getLocalizedMessage(), e);
+         }
+@@ -100,12 +103,11 @@ public class Hardware {
+     }
+ 
+     public void suspend() {
+-        IHardware service = getService();
+-        if (service == null) {
++        if (sService == null) {
+             return;
+         }
+         try {
+-            service.suspend();
++            sService.suspend();
+         } catch (RemoteException e) {
+             Log.e(TAG, e.getLocalizedMessage(), e);
+         }
+@@ -113,12 +115,11 @@ public class Hardware {
+     }
+ 
+     public void reboot() {
+-        IHardware service = getService();
+-        if (service == null) {
++        if (sService == null) {
+             return;
+         }
+         try {
+-            service.reboot();
++            sService.reboot();
+         } catch (RemoteException e) {
+             Log.e(TAG, e.getLocalizedMessage(), e);
+         }
+@@ -126,12 +127,11 @@ public class Hardware {
+     }
+ 
+     public void upgrade(String system_zip, int system_time, String vendor_zip, int vendor_time) {
+-        IHardware service = getService();
+-        if (service == null) {
++        if (sService == null) {
+             return;
+         }
+         try {
+-            service.upgrade(system_zip, system_time, vendor_zip, vendor_time);
++            sService.upgrade(system_zip, system_time, vendor_zip, vendor_time);
+         } catch (RemoteException e) {
+             Log.e(TAG, e.getLocalizedMessage(), e);
+         }
+-- 
+2.53.0
+

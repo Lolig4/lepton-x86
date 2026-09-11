@@ -1,0 +1,35 @@
+From 76eb35e1a76e644d160a2e5d5d27223f37c4aab9 Mon Sep 17 00:00:00 2001
+From: Franz-Josef Haider <frajo@frajo.fi>
+Date: Tue, 30 Jun 2026 21:20:47 +0300
+Subject: [PATCH 6/9] Revert "Always re-new ServiceManager"
+
+This reverts commit 421fa152178136becf186f00fbb092b2cfb983ea.
+---
+ transport/ServiceManagement.cpp | 10 ++++------
+ 1 file changed, 4 insertions(+), 6 deletions(-)
+
+diff --git a/transport/ServiceManagement.cpp b/transport/ServiceManagement.cpp
+index 908de3f..d17664b 100644
+--- a/transport/ServiceManagement.cpp
++++ b/transport/ServiceManagement.cpp
+@@ -180,13 +180,11 @@ sp<IServiceManager1_2> defaultServiceManager1_2(bool useHostHwBinder) {
+ 
+     {
+         std::lock_guard<std::mutex> _l(gDefaultServiceManagerLock);
+-        gDefaultServiceManager = nullptr;
+-            //if (gDefaultServiceManager != nullptr) {
+-            //    return gDefaultServiceManager;
+-            //}
++        if (gDefaultServiceManager != nullptr) {
++            return gDefaultServiceManager;
++        }
+ 
+-            if (access(useHostHwBinder ? "/dev/host_hwbinder" : "/dev/hwbinder", F_OK | R_OK | W_OK) != 0)
+-        {
++        if (access(useHostHwBinder ? "/dev/host_hwbinder" : "/dev/hwbinder", F_OK|R_OK|W_OK) != 0) {
+             // HwBinder not available on this device or not accessible to
+             // this process.
+             return nullptr;
+-- 
+2.54.0
+

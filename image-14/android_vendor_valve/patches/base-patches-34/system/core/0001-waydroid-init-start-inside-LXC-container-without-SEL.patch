@@ -1,0 +1,336 @@
+From ec2e3d896021ff8f989412d8184f87f9ce768037 Mon Sep 17 00:00:00 2001
+From: Asriel Dreemurr <asriel.danctnix@gmail.com>
+Date: Sun, 18 Oct 2020 00:31:45 +0700
+Subject: [PATCH 01/21] (waydroid) init: start inside LXC container without
+ SELinux
+
+---
+ init/Android.bp           |  2 ++
+ init/first_stage_init.cpp | 31 ++++++++++++++++++++++++++-----
+ init/init.cpp             |  6 ++++--
+ init/property_service.cpp | 23 +++++++++++++++--------
+ init/service.cpp          | 12 ++++++++----
+ init/subcontext.cpp       |  3 ++-
+ init/util.cpp             | 18 +++++++++++-------
+ 7 files changed, 68 insertions(+), 27 deletions(-)
+
+diff --git a/init/Android.bp b/init/Android.bp
+index c3abefe149..78b604c4fc 100644
+--- a/init/Android.bp
++++ b/init/Android.bp
+@@ -393,6 +393,7 @@ init_first_stage_cc_defaults {
+         "-Wall",
+         "-Wextra",
+         "-Wno-unused-parameter",
++        "-Wno-unused-function",
+         "-Werror",
+         "-DALLOW_FIRST_STAGE_CONSOLE=0",
+         "-DALLOW_LOCAL_PROP_OVERRIDE=0",
+@@ -575,6 +576,7 @@ cc_defaults {
+         "-Wall",
+         "-Wextra",
+         "-Wno-unused-parameter",
++        "-Wno-unused-function",
+         "-Werror",
+     ],
+     static_libs: [
+diff --git a/init/first_stage_init.cpp b/init/first_stage_init.cpp
+index c4d0f758dd..43345edf66 100644
+--- a/init/first_stage_init.cpp
++++ b/init/first_stage_init.cpp
+@@ -330,6 +330,8 @@ int FirstStageMain(int argc, char** argv) {
+     CHECKCALL(setenv("PATH", _PATH_DEFPATH, 1));
+     // Get the basic filesystem setup we need put together in the initramdisk
+     // on / and then we'll let the rc file figure out the rest.
++    // Disabled in Waydroid
++    /*
+     CHECKCALL(mount("tmpfs", "/dev", "tmpfs", MS_NOSUID, "mode=0755"));
+     CHECKCALL(mkdir("/dev/pts", 0755));
+     CHECKCALL(mkdir("/dev/socket", 0755));
+@@ -338,6 +340,7 @@ int FirstStageMain(int argc, char** argv) {
+ #define MAKE_STR(x) __STRING(x)
+     CHECKCALL(mount("proc", "/proc", "proc", 0, "hidepid=2,gid=" MAKE_STR(AID_READPROC)));
+ #undef MAKE_STR
++    */
+     // Don't expose the raw commandline to unprivileged processes.
+     CHECKCALL(chmod("/proc/cmdline", 0440));
+     std::string cmdline;
+@@ -348,8 +351,9 @@ int FirstStageMain(int argc, char** argv) {
+     android::base::ReadFileToString("/proc/bootconfig", &bootconfig);
+     gid_t groups[] = {AID_READPROC};
+     CHECKCALL(setgroups(arraysize(groups), groups));
+-    CHECKCALL(mount("sysfs", "/sys", "sysfs", 0, NULL));
+-    CHECKCALL(mount("selinuxfs", "/sys/fs/selinux", "selinuxfs", 0, NULL));
++    // Disabled in Waydroid
++    /*CHECKCALL(mount("sysfs", "/sys", "sysfs", 0, NULL));
++    CHECKCALL(mount("selinuxfs", "/sys/fs/selinux", "selinuxfs", 0, NULL));*/
+ 
+     CHECKCALL(mknod("/dev/kmsg", S_IFCHR | 0600, makedev(1, 11)));
+ 
+@@ -361,8 +365,14 @@ int FirstStageMain(int argc, char** argv) {
+     CHECKCALL(mknod("/dev/urandom", S_IFCHR | 0666, makedev(1, 9)));
+ 
+     // This is needed for log wrapper, which gets called before ueventd runs.
+-    CHECKCALL(mknod("/dev/ptmx", S_IFCHR | 0666, makedev(5, 2)));
+-    CHECKCALL(mknod("/dev/null", S_IFCHR | 0666, makedev(1, 3)));
++    // Can be created by LXC on Waydroid
++    if (is_recovery) {
++        CHECKCALL(mknod("/dev/ptmx", S_IFCHR | 0666, makedev(5, 2)));
++        CHECKCALL(mknod("/dev/null", S_IFCHR | 0666, makedev(1, 3)));
++    } else {
++        mknod("/dev/ptmx", S_IFCHR | 0666, makedev(5, 2));
++        mknod("/dev/null", S_IFCHR | 0666, makedev(1, 3));
++    }
+ 
+     // These below mounts are done in first stage init so that first stage mount can mount
+     // subdirectories of /mnt/{vendor,product}/.  Other mounts, not required by first stage mount,
+@@ -523,9 +533,12 @@ int FirstStageMain(int argc, char** argv) {
+             LOG(FATAL) << "Failed to create devices required for first stage mount";
+         }
+ 
++        // Disabled in Waydroid
++        /*
+         if (!fsm->DoFirstStageMount()) {
+             LOG(FATAL) << "Failed to mount required partitions early ...";
+         }
++        */
+     }
+ 
+     struct stat new_root_info {};
+@@ -543,8 +556,16 @@ int FirstStageMain(int argc, char** argv) {
+     setenv(kEnvFirstStageStartedAt, std::to_string(start_time.time_since_epoch().count()).c_str(),
+            1);
+ 
++
+     const char* path = "/system/bin/init";
+-    const char* args[] = {path, "selinux_setup", nullptr};
++    // Waydroid: skip selinux_setup
++    const char* next_stage;
++//    if (is_recovery) {
++//        next_stage = "selinux_setup";
++//    } else {
++        next_stage = "second_stage";
++//    }
++    const char* args[] = {path, next_stage, nullptr};
+     auto fd = open("/dev/kmsg", O_WRONLY | O_CLOEXEC);
+     dup2(fd, STDOUT_FILENO);
+     dup2(fd, STDERR_FILENO);
+diff --git a/init/init.cpp b/init/init.cpp
+index 19e909fcb5..6c606ddc34 100644
+--- a/init/init.cpp
++++ b/init/init.cpp
+@@ -1064,7 +1064,8 @@ int SecondStageMain(int argc, char** argv) {
+     }
+ 
+     am.QueueBuiltinAction(SetupCgroupsAction, "SetupCgroups");
+-    am.QueueBuiltinAction(SetKptrRestrictAction, "SetKptrRestrict");
++    // Disabled in Waydroid
++    // am.QueueBuiltinAction(SetKptrRestrictAction, "SetKptrRestrict");
+     am.QueueBuiltinAction(TestPerfEventSelinuxAction, "TestPerfEventSelinux");
+     am.QueueEventTrigger("early-init");
+     am.QueueBuiltinAction(ConnectEarlyStageSnapuserdAction, "ConnectEarlyStageSnapuserd");
+@@ -1072,7 +1073,8 @@ int SecondStageMain(int argc, char** argv) {
+     // Queue an action that waits for coldboot done so we know ueventd has set up all of /dev...
+     am.QueueBuiltinAction(wait_for_coldboot_done_action, "wait_for_coldboot_done");
+     // ... so that we can start queuing up actions that require stuff from /dev.
+-    am.QueueBuiltinAction(SetMmapRndBitsAction, "SetMmapRndBits");
++    // Disabled in Waydroid
++    // am.QueueBuiltinAction(SetMmapRndBitsAction, "SetMmapRndBits");
+     Keychords keychords;
+     am.QueueBuiltinAction(
+             [&epoll, &keychords](const BuiltinArguments& args) -> Result<void> {
+diff --git a/init/property_service.cpp b/init/property_service.cpp
+index 157fc709c6..544c9fcc25 100644
+--- a/init/property_service.cpp
++++ b/init/property_service.cpp
+@@ -159,7 +159,8 @@ void StopSendingMessages() {
+ }
+ 
+ bool CanReadProperty(const std::string& source_context, const std::string& name) {
+-    const char* target_context = nullptr;
++    // Disabled in Waydroid
++    /*const char* target_context = nullptr;
+     property_info_area->GetPropertyInfo(name.c_str(), &target_context, nullptr);
+ 
+     PropertyAuditData audit_data;
+@@ -171,12 +172,14 @@ bool CanReadProperty(const std::string& source_context, const std::string& name)
+ 
+     auto lock = std::lock_guard{selinux_check_access_lock};
+     return selinux_check_access(source_context.c_str(), target_context, "file", "read",
+-                                &audit_data) == 0;
++                                &audit_data) == 0;*/
++    return true;
+ }
+ 
+ static bool CheckMacPerms(const std::string& name, const char* target_context,
+                           const char* source_context, const ucred& cr) {
+-    if (!target_context || !source_context) {
++    // Disabled in Waydroid
++    /*if (!target_context || !source_context) {
+         return false;
+     }
+ 
+@@ -188,6 +191,8 @@ static bool CheckMacPerms(const std::string& name, const char* target_context,
+     auto lock = std::lock_guard{selinux_check_access_lock};
+     return selinux_check_access(source_context, target_context, "property_service", "set",
+                                 &audit_data) == 0;
++    */
++    return true;
+ }
+ 
+ void NotifyPropertyChange(const std::string& name, const std::string& value) {
+@@ -634,11 +639,12 @@ static void handle_property_set_fd(int fd) {
+         prop_name[PROP_NAME_MAX-1] = 0;
+         prop_value[PROP_VALUE_MAX-1] = 0;
+ 
+-        std::string source_context;
+-        if (!socket.GetSourceContext(&source_context)) {
++        std::string source_context = "";
++        // Disabled in Waydroid
++        /*if (!socket.GetSourceContext(&source_context)) {
+             PLOG(ERROR) << "Unable to set property '" << prop_name << "': getpeercon() failed";
+             return;
+-        }
++        }*/
+ 
+         const auto& cr = socket.cred();
+         std::string error;
+@@ -662,11 +668,12 @@ static void handle_property_set_fd(int fd) {
+         }
+ 
+         std::string source_context;
+-        if (!socket.GetSourceContext(&source_context)) {
++        // Disabled in Waydroid
++        /*if (!socket.GetSourceContext(&source_context)) {
+             PLOG(ERROR) << "Unable to set property '" << name << "': getpeercon() failed";
+             socket.SendUint32(PROP_ERROR_PERMISSION_DENIED);
+             return;
+-        }
++        }*/
+ 
+         // HandlePropertySet takes ownership of the socket if the set is handled asynchronously.
+         const auto& cr = socket.cred();
+diff --git a/init/service.cpp b/init/service.cpp
+index eb24dd5937..ad302b14c2 100644
+--- a/init/service.cpp
++++ b/init/service.cpp
+@@ -75,6 +75,7 @@ using android::base::WriteStringToFile;
+ namespace android {
+ namespace init {
+ 
++#if 0
+ static Result<std::string> ComputeContextFromExecutable(const std::string& service_path) {
+     std::string computed_context;
+ 
+@@ -112,6 +113,7 @@ static Result<std::string> ComputeContextFromExecutable(const std::string& servi
+     }
+     return computed_context;
+ }
++#endif
+ 
+ static bool ExpandArgsAndExecv(const std::vector<std::string>& args, bool sigstop) {
+     std::vector<std::string> expanded_args;
+@@ -240,9 +242,10 @@ void Service::SetProcessAttributesAndCaps(InterprocessFifo setsid_finished) {
+     }
+ 
+     if (!seclabel_.empty()) {
+-        if (setexeccon(seclabel_.c_str()) < 0) {
++        // Disabled in Waydroid
++        /*if (setexeccon(seclabel_.c_str()) < 0) {
+             PLOG(FATAL) << "cannot setexeccon('" << seclabel_ << "') for " << name_;
+-        }
++        }*/
+     }
+ 
+     if (capabilities_) {
+@@ -623,7 +626,8 @@ Result<void> Service::Start() {
+     }
+ 
+     std::string scon;
+-    if (!seclabel_.empty()) {
++    // Disabled in Waydroid
++    /*if (!seclabel_.empty()) {
+         scon = seclabel_;
+     } else {
+         auto result = ComputeContextFromExecutable(args_[0]);
+@@ -631,7 +635,7 @@ Result<void> Service::Start() {
+             return result.error();
+         }
+         scon = *result;
+-    }
++    }*/
+ 
+     if (!mount_namespace_.has_value()) {
+         // remember from which mount namespace the service should start
+diff --git a/init/subcontext.cpp b/init/subcontext.cpp
+index 6a095fb7ba..fe3ee4e0a8 100644
+--- a/init/subcontext.cpp
++++ b/init/subcontext.cpp
+@@ -214,7 +214,8 @@ void Subcontext::Fork() {
+ 
+         // We don't switch contexts if we're running the unit tests.  We don't use std::optional,
+         // since we still need a real context string to pass to the builtin functions.
+-        if (context_ != kTestContext) {
++        // Disabled in LXC container
++        if (false /*context_ != kTestContext*/) {
+             if (setexeccon(context_.c_str()) < 0) {
+                 PLOG(FATAL) << "Could not set execcon for '" << context_ << "'";
+             }
+diff --git a/init/util.cpp b/init/util.cpp
+index e760a5969f..7799180c50 100644
+--- a/init/util.cpp
++++ b/init/util.cpp
+@@ -93,18 +93,20 @@ Result<uid_t> DecodeUid(const std::string& name) {
+  */
+ Result<int> CreateSocket(const std::string& name, int type, bool passcred, bool should_listen,
+                          mode_t perm, uid_t uid, gid_t gid, const std::string& socketcon) {
+-    if (!socketcon.empty()) {
++    // Disabled in Waydroid
++    /*if (!socketcon.empty()) {
+         if (setsockcreatecon(socketcon.c_str()) == -1) {
+             return ErrnoError() << "setsockcreatecon(\"" << socketcon << "\") failed";
+         }
+-    }
++    }*/
+ 
+     android::base::unique_fd fd(socket(PF_UNIX, type, 0));
+     if (fd < 0) {
+         return ErrnoError() << "Failed to open socket '" << name << "'";
+     }
+ 
+-    if (!socketcon.empty()) setsockcreatecon(nullptr);
++    // Disabled in Waydroid
++    /*if (!socketcon.empty()) setsockcreatecon(nullptr);*/
+ 
+     struct sockaddr_un addr;
+     memset(&addr, 0 , sizeof(addr));
+@@ -115,10 +117,11 @@ Result<int> CreateSocket(const std::string& name, int type, bool passcred, bool
+         return ErrnoError() << "Failed to unlink old socket '" << name << "'";
+     }
+ 
+-    std::string secontext;
++    // Disabled in Waydroid
++    /*std::string secontext;
+     if (SelabelLookupFileContext(addr.sun_path, S_IFSOCK, &secontext) && !secontext.empty()) {
+         setfscreatecon(secontext.c_str());
+-    }
++    }*/
+ 
+     if (passcred) {
+         int on = 1;
+@@ -130,9 +133,10 @@ Result<int> CreateSocket(const std::string& name, int type, bool passcred, bool
+     int ret = bind(fd.get(), (struct sockaddr*)&addr, sizeof(addr));
+     int savederrno = errno;
+ 
+-    if (!secontext.empty()) {
++    // Disabled in Waydroid
++    /*if (!secontext.empty()) {
+         setfscreatecon(nullptr);
+-    }
++    }*/
+ 
+     auto guard = android::base::make_scope_guard([&addr] { unlink(addr.sun_path); });
+ 
+-- 
+2.55.0
+

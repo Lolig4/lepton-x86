@@ -1,0 +1,28 @@
+From 7a0ea894b83d3eab72bd4abdb771fb72bd1cd8db Mon Sep 17 00:00:00 2001
+From: Franz-Josef Haider <frajo@frajo.fi>
+Date: Mon, 2 Mar 2026 17:36:34 +0200
+Subject: [PATCH 03/11] Revert "WayDroidClipboard: Account for possible null
+ values from the host"
+
+This reverts commit 9403c1a229b0f4ff00dfae7fe4c40459334cb80e.
+---
+ sdk/src/java/lineageos/waydroid/Clipboard.java | 3 +--
+ 1 file changed, 1 insertion(+), 2 deletions(-)
+
+diff --git a/sdk/src/java/lineageos/waydroid/Clipboard.java b/sdk/src/java/lineageos/waydroid/Clipboard.java
+index ba5a333a..3b4972ee 100644
+--- a/sdk/src/java/lineageos/waydroid/Clipboard.java
++++ b/sdk/src/java/lineageos/waydroid/Clipboard.java
+@@ -87,8 +87,7 @@ public class Clipboard {
+             return "";
+         }
+         try {
+-            String paste = service.getClipboardData();
+-            return paste != null ? paste : "";
++            return service.getClipboardData();
+         } catch (RemoteException e) {
+             Log.e(TAG, e.getLocalizedMessage(), e);
+         }
+-- 
+2.53.0
+

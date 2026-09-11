@@ -1,0 +1,51 @@
+From 3a1ffa839801b937761c2d03854f5aa49f60bf35 Mon Sep 17 00:00:00 2001
+From: Franz-Josef Haider <frajo@frajo.fi>
+Date: Tue, 30 Jun 2026 20:10:58 +0300
+Subject: [PATCH 2/3] Revert "drm: Fix drm on older vendors"
+
+This reverts commit f20cd6e193e8a1f56a2f51fc7059bbebba3c305b.
+---
+ drm/libmediadrm/DrmUtils.cpp | 18 ------------------
+ 1 file changed, 18 deletions(-)
+
+diff --git a/drm/libmediadrm/DrmUtils.cpp b/drm/libmediadrm/DrmUtils.cpp
+index 5c02de9dd9..d85fa61a52 100644
+--- a/drm/libmediadrm/DrmUtils.cpp
++++ b/drm/libmediadrm/DrmUtils.cpp
+@@ -27,10 +27,8 @@
+ #include <android/hardware/drm/1.2/IDrmFactory.h>
+ #include <android/hardware/drm/1.3/ICryptoFactory.h>
+ #include <android/hardware/drm/1.3/IDrmFactory.h>
+-#include <android/hidl/manager/1.1/IServiceManager.h>
+ #include <android/hidl/manager/1.2/IServiceManager.h>
+ #include <hidl/HidlSupport.h>
+-#include <hidl/ServiceManagement.h>
+ 
+ #include <utils/Errors.h>
+ #include <utils/Log.h>
+@@ -74,22 +72,6 @@ void MakeHidlFactories(const uint8_t uuid[16], V &factories) {
+         exit(-1);
+     }
+ 
+-    // Waydroid: check host_hwbinder services
+-    auto serviceManager_host = hardware::defaultServiceManager1_1(true);
+-    if (serviceManager_host != nullptr) {
+-        serviceManager_host->listByInterface(Hal::descriptor, [&](const hidl_vec<hidl_string> &registered) {
+-            for (const auto &instance : registered) {
+-                auto factory = Hal::getService(instance);
+-                if (factory != nullptr) {
+-                    ALOGI("found %s %s", Hal::descriptor, instance.c_str());
+-                    if (!uuid || factory->isCryptoSchemeSupported(uuid)) {
+-                        factories.push_back(factory);
+-                    }
+-                }
+-            }
+-        });
+-    }
+-
+     serviceManager->listManifestByInterface(Hal::descriptor, [&](const hidl_vec<hidl_string> &registered) {
+         for (const auto &instance : registered) {
+             auto factory = Hal::getService(instance);
+-- 
+2.54.0
+

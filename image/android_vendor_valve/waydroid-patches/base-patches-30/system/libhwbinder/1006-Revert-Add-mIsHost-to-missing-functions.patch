@@ -1,0 +1,75 @@
+From 509f67e418c50484eeea7e5f4cc176d746fa5406 Mon Sep 17 00:00:00 2001
+From: Franz-Josef Haider <frajo@frajo.fi>
+Date: Tue, 30 Jun 2026 20:20:59 +0300
+Subject: [PATCH 6/7] Revert "Add mIsHost to missing functions"
+
+This reverts commit a6906418b97ecc2404b6b495e2c1aa98c04ceec1.
+---
+ IPCThreadState.cpp | 2 +-
+ ProcessState.cpp   | 9 ++++-----
+ 2 files changed, 5 insertions(+), 6 deletions(-)
+
+diff --git a/IPCThreadState.cpp b/IPCThreadState.cpp
+index 208271e..1427282 100644
+--- a/IPCThreadState.cpp
++++ b/IPCThreadState.cpp
+@@ -829,7 +829,7 @@ status_t IPCThreadState::clearDeathNotification(int32_t handle, BpHwBinder* prox
+ }
+ 
+ IPCThreadState::IPCThreadState(bool isHost)
+-    : mProcess(ProcessState::self(isHost)),
++    : mProcess(ProcessState::self()),
+       mServingStackPointer(nullptr),
+       mStrictModePolicy(0),
+       mLastTransactionBinderFlags(0),
+diff --git a/ProcessState.cpp b/ProcessState.cpp
+index ba9c97c..623ed16 100644
+--- a/ProcessState.cpp
++++ b/ProcessState.cpp
+@@ -58,7 +58,6 @@ protected:
+     virtual bool threadLoop()
+     {
+         IPCThreadState::self()->joinThreadPool(mIsMain);
+-        IPCThreadState::selfForHost()->joinThreadPool(mIsMain);
+         return false;
+     }
+ 
+@@ -152,7 +151,7 @@ sp<IBinder> ProcessState::getContextObject(const String16& name, const sp<IBinde
+         return nullptr;
+     }
+ 
+-    IPCThreadState* ipc = IPCThreadState::self(mIsHost);
++    IPCThreadState* ipc = IPCThreadState::self();
+     {
+         Parcel data, reply;
+         // no interface token on this magic transaction
+@@ -276,7 +275,7 @@ size_t ProcessState::getMmapSize() {
+ }
+ 
+ void ProcessState::setCallRestriction(CallRestriction restriction) {
+-    LOG_ALWAYS_FATAL_IF(IPCThreadState::selfOrNull(mIsHost) != nullptr,
++    LOG_ALWAYS_FATAL_IF(IPCThreadState::selfOrNull() != nullptr,
+         "Call restrictions must be set before the threadpool is started.");
+ 
+     mCallRestriction = restriction;
+@@ -309,7 +308,7 @@ sp<IBinder> ProcessState::getStrongProxyForHandle(int32_t handle)
+         // in getWeakProxyForHandle() for more info about this.
+         IBinder* b = e->binder;
+         if (b == nullptr || !e->refs->attemptIncWeak(this)) {
+-            b = new BpHwBinder(handle, mIsHost);
++            b = new BpHwBinder(handle);
+             e->binder = b;
+             if (b) e->refs = b->getWeakRefs();
+             result = b;
+@@ -343,7 +342,7 @@ wp<IBinder> ProcessState::getWeakProxyForHandle(int32_t handle)
+         // arriving from the driver.
+         IBinder* b = e->binder;
+         if (b == nullptr || !e->refs->attemptIncWeak(this)) {
+-            b = new BpHwBinder(handle, mIsHost);
++            b = new BpHwBinder(handle);
+             result = b;
+             e->binder = b;
+             if (b) e->refs = b->getWeakRefs();
+-- 
+2.54.0
+

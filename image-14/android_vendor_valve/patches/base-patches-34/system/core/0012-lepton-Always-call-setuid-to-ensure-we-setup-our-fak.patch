@@ -1,0 +1,59 @@
+From 5e0828b40fd571a15c844e771bd502526efb9c91 Mon Sep 17 00:00:00 2001
+From: Franz-Josef Haider <frajo@frajo.fi>
+Date: Mon, 29 Dec 2025 12:33:17 +0200
+Subject: [PATCH 12/21] lepton: Always call setuid to ensure we setup our fake
+ uid properly.
+
+Change-Id: I2a91ec9a1ceef8dfbce4130b957541ed8be5ce89
+---
+ init/service_utils.cpp | 17 +++++++++--------
+ 1 file changed, 9 insertions(+), 8 deletions(-)
+
+diff --git a/init/service_utils.cpp b/init/service_utils.cpp
+index 0e19bcc58c..a1194e27d7 100644
+--- a/init/service_utils.cpp
++++ b/init/service_utils.cpp
+@@ -251,31 +251,32 @@ Result<void> SetProcessAttributes(const ProcessAttributes& attr, InterprocessFif
+         // process group ID for a child of the init process in the PID
+         // namespace.
+         if (setpgid(0, 0) == -1) {
+-            return ErrnoError() << "setpgid failed";
++            //return ErrnoError() << "setpgid failed";
+         }
+         SetupStdio(attr.stdio_to_kmsg);
+     }
+ 
+     for (const auto& rlimit : attr.rlimits) {
+         if (setrlimit(rlimit.first, &rlimit.second) == -1) {
+-            return ErrnoErrorf("setrlimit({}, {{rlim_cur={}, rlim_max={}}}) failed", rlimit.first,
+-                               rlimit.second.rlim_cur, rlimit.second.rlim_max);
++            //return ErrnoErrorf("setrlimit({}, {{rlim_cur={}, rlim_max={}}}) failed", rlimit.first,
++            //                   rlimit.second.rlim_cur, rlimit.second.rlim_max);
+         }
+     }
+ 
+-    if (attr.gid) {
++    // Lepton: always call setgid/setuid for our fake id handling
++    //if (attr.gid) {
+         if (setgid(attr.gid) != 0) {
+             return ErrnoError() << "setgid failed";
+         }
+-    }
++    //}
+     if (setgroups(attr.supp_gids.size(), const_cast<gid_t*>(&attr.supp_gids[0])) != 0) {
+-        return ErrnoError() << "setgroups failed";
++        //return ErrnoError() << "setgroups failed";
+     }
+-    if (attr.uid()) {
++    //if (attr.uid()) {
+         if (setuid(attr.uid()) != 0) {
+             return ErrnoError() << "setuid failed";
+         }
+-    }
++    //}
+ 
+     if (attr.priority != 0) {
+         if (setpriority(PRIO_PROCESS, 0, attr.priority) != 0) {
+-- 
+2.55.0
+

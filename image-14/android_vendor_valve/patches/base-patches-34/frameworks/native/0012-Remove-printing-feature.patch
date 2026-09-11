@@ -1,0 +1,25 @@
+From c6b827c40cecea2df57c4e5fc8b0dabd4fc5a401 Mon Sep 17 00:00:00 2001
+From: SteamOS Waydroid Builder <waydroid-builder@steamos.cloud>
+Date: Tue, 12 Nov 2024 17:31:19 +0000
+Subject: [PATCH 12/19] Remove printing feature
+
+Change-Id: I5f8270ac841e99359bdb1fe3f73dd6357110f868
+---
+ data/etc/handheld_core_hardware.xml | 1 -
+ 1 file changed, 1 deletion(-)
+
+diff --git a/data/etc/handheld_core_hardware.xml b/data/etc/handheld_core_hardware.xml
+index 08330126c7..1a92e22fd2 100644
+--- a/data/etc/handheld_core_hardware.xml
++++ b/data/etc/handheld_core_hardware.xml
+@@ -49,7 +49,6 @@
+     <feature name="android.software.input_methods" />
+     <feature name="android.software.picture_in_picture" notLowRam="true" />
+     <feature name="android.software.activities_on_secondary_displays" notLowRam="true" />
+-    <feature name="android.software.print" />
+     <feature name="android.software.companion_device_setup" />
+     <feature name="android.software.autofill" />
+     <feature name="android.software.credentials" />
+-- 
+2.55.0
+

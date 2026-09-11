@@ -1,0 +1,64 @@
+From a5274ac3cf8efd0c2d0501fe365f55759b2bfcce Mon Sep 17 00:00:00 2001
+From: Elliot Saba <sabae@valvesoftware.com>
+Date: Tue, 29 Oct 2024 12:40:09 -0700
+Subject: [PATCH] Force `soong` to forward `HTTP_PROXY` and friends
+
+This allows build processes like `meson` to auto-download dependencies
+for our `mesa` build.
+
+Change-Id: I502ba697270ed90ca8202cc80924ac47a31e2bfa
+---
+ ui/build/dumpvars.go | 12 ++++++++++++
+ ui/build/ninja.go    |  6 ++++++
+ 2 files changed, 18 insertions(+)
+
+diff --git a/ui/build/dumpvars.go b/ui/build/dumpvars.go
+index 6f6e0127..57c20fee 100644
+--- a/ui/build/dumpvars.go
++++ b/ui/build/dumpvars.go
+@@ -169,6 +169,12 @@ var BannerVars = []string{
+ 	"WITH_GMS_CAR",
+ 	"WITH_GMS_TV",
+         "WITH_GMS_MINIMAL",
++
++	// HTTP proxy variables, for when mesa needs to download e.g. lua
++	"HTTP_PROXY",
++	"HTTPS_PROXY",
++	"http_proxy",
++	"https_proxy",
+ }
+ 
+ func Banner(make_vars map[string]string) string {
+@@ -207,6 +213,12 @@ func runMakeProductConfig(ctx Context, config Config) {
+ 		"CCACHE_SLOPPINESS",
+ 		"CCACHE_BASEDIR",
+ 		"CCACHE_CPP2",
++
++		// HTTP proxy variables, for when mesa needs to download e.g. lua
++		"HTTP_PROXY",
++		"HTTPS_PROXY",
++		"http_proxy",
++		"https_proxy",
+ 	}
+ 
+ 	allVars := append(append([]string{
+diff --git a/ui/build/ninja.go b/ui/build/ninja.go
+index dfc3be1f..3dd7abb7 100644
+--- a/ui/build/ninja.go
++++ b/ui/build/ninja.go
+@@ -154,6 +154,12 @@ func runNinja(ctx Context, config Config) {
+ 			"CCACHE_BASEDIR",
+ 			"CCACHE_CPP2",
+ 			"CCACHE_DIR",
++
++			// HTTP proxy settings
++			"HTTP_PROXY",
++			"HTTPS_PROXY",
++			"http_proxy",
++			"https_proxy",
+ 		}, config.BuildBrokenNinjaUsesEnvVars()...)...)
+ 	}
+ 
+-- 
+2.34.1
+
