@@ -1,0 +1,44 @@
+From 10eded5734bec384ef3e4fc1afe74e931cbc2dfb Mon Sep 17 00:00:00 2001
+From: Franz-Josef Haider <frajo@frajo.fi>
+Date: Wed, 9 Sep 2026 13:18:26 +0300
+Subject: [PATCH 1/1] lepton: emulated storage has been moved to /home.
+
+Change-Id: I869500fd1d49c8025a4bdf0454b53a36e2075271
+---
+ .../ExternalStorageProvider.java              | 20 +++++++++++++++++++
+ 1 file changed, 20 insertions(+)
+
+diff --git a/packages/ExternalStorageProvider/src/com/android/externalstorage/ExternalStorageProvider.java b/packages/ExternalStorageProvider/src/com/android/externalstorage/ExternalStorageProvider.java
+index 05d6f4b52f8b..0b35f883e07b 100644
+--- a/packages/ExternalStorageProvider/src/com/android/externalstorage/ExternalStorageProvider.java
++++ b/packages/ExternalStorageProvider/src/com/android/externalstorage/ExternalStorageProvider.java
+@@ -385,6 +385,26 @@ public class ExternalStorageProvider extends FileSystemProvider {
+             throws FileNotFoundException {
+         String path = file.getAbsolutePath();
+ 
++        try {
++            File storage = new File("/storage/emulated/0");
++            String canonical = file.getCanonicalPath();
++
++            File[] files = storage.listFiles();
++            if (files != null) {
++                for (File f : files) {
++                    String target = f.getCanonicalPath();
++
++                    if (canonical.equals(target)
++                            || canonical.startsWith(target + File.separator)) {
++                        path = f.getPath() + canonical.substring(target.length());
++                        break;
++                    }
++                }
++            }
++        } catch (IOException e) {
++            Log.e(TAG, "Lepton: \"" + path + "\" could not be resolved: " + e.toString());
++        }
++
+         // Find the most-specific root path
+         boolean visiblePath = false;
+         RootInfo mostSpecificRoot = getMostSpecificRootForPath(path, false);
+-- 
+2.55.0
+
