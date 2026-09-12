@@ -46,7 +46,7 @@ function extract_app_id()
 
 function extract_app_last_depot_version()
 {
-    println "compat_tool:$(lepton_version),rootfs:$(lepton_rootfs_version)"
+    println "compat_tool:$(lepton_version),rootfs:$(lepton_rootfs_version),sdk:$(android_sdk_version)"
 }
 
 APP_PACKAGE_ID=""
