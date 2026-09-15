@@ -340,13 +340,7 @@ build-test-apk-job:
 
 tests-job:
   stage: test
-  parallel:
-    matrix:
-      - RUNNER_TAG: aarch64-linux-docker-privileged
-        SHARD: [1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 32]
-      # Run the repeated start tests on a heavier runner
-      - RUNNER_TAG: aarch64-linux-docker-heavy-privileged
-        SHARD: [12, 13, 14, 15, 16, 17, 18, 19, 20, 21, 22, 23, 24, 25, 26, 27, 28, 29, 30, 31]
+  parallel: 32
   image: registry.gitlab.steamos.cloud/deckard/deckardos/holo/steamos-arm64-vr-sysimg:latest
   needs:
     - pre-sysbake-job
@@ -376,7 +370,7 @@ tests-job:
   variables:
     FF_DISABLE_UMASK_FOR_DOCKER_EXECUTOR: "true"
   tags:
-    - $RUNNER_TAG
+    - aarch64-linux-docker-privileged
   artifacts:
     paths:
       - test-output.log
