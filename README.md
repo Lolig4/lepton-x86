@@ -18,7 +18,7 @@
   * **Lepton** supports integration with various debuggers (`strace`, `gdb`, `lldb`, `renderdoc`, etc...) and profilers (`perfetto`).
   * **Lepton** hides the flatscreen window by default, but can show it if necessary for development
 
-**Lepton** incorporates patches and components from the Waydroid, halium and hybris projects in the building of the Android container root filesystem.
+**Lepton** incorporates patches and components from the Waydroid, Anbox, Halium and Hybris projects in the building of the Android container root filesystem.
 The Android root filesystem is therefore released under a GPL-3.0 license (see [LICENSE.AOSP.image](LICENSE.AOSP.image), while the compatibility tool itself is released under the MIT license, (see [LICENSE.lepton](LICENSE.lepton)).
 
 # Repository layout
