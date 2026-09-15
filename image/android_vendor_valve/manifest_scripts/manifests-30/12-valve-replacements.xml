@@ -8,9 +8,6 @@
   <project path="hardware/waydroid" name="frame-public/android_hardware_waydroid" remote="steamos_cloud" revision="refs/heads/lineage-18.1" />
   <project path="vendor/extra" name="WayDroid/android_vendor_waydroid" remote="ghub" revision="e2619850d7bfd9bf88d2c8a927ea221f6deb9bd7" />
 
-  <!-- Audio -->
-  <project path="external/alsa-lib" name="frame-public/android_external_alsa-lib" remote="steamos_cloud" revision="refs/heads/lineage-17.1" />
-
   <!-- vulkan 1.3 headers -->
   <project path="external/vulkan-headers" name="frame-public/vulkan-headers" groups="pdk" remote="steamos_cloud" revision="vulkan-1.3" />
 </manifest>
