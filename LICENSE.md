@@ -1,4 +1,4 @@
-Copyright (c) 2025, Valve Corporation
+Copyright (c) 2026, Valve Corporation
 All rights reserved.
 
 Redistribution and use of Lepton in source and binary forms is governed

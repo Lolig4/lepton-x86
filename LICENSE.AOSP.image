@@ -10,3 +10,4 @@ The Lepton AOSP image uses source code from the following opensource projects wi
 * LineageOS: Licenses can be found in the individual repositories under: https://github.com/LineageOS
 
 The AOSP image, as a product of the combination of these opensource projects, is released under a GPL-3.0 license.
+The GPL-3.0 license text can be read here: https://www.gnu.org/licenses/gpl-3.0.html
