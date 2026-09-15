@@ -9,5 +9,5 @@
   <project path="vendor/extra" name="WayDroid/android_vendor_waydroid" remote="ghub" revision="e2619850d7bfd9bf88d2c8a927ea221f6deb9bd7" />
 
   <!-- vulkan 1.3 headers -->
-  <project path="external/vulkan-headers" name="frame-public/vulkan-headers" groups="pdk" remote="steamos_cloud" revision="vulkan-1.3" />
+  <project path="external/vulkan-headers" name="frame-public/android-vulkan-headers" remote="steamos_cloud" revision="vulkan-1.3" />
 </manifest>
