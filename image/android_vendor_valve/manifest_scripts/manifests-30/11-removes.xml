@@ -9,8 +9,7 @@
   <remove-project name="platform/packages/providers/TvProvider" />
   <remove-project name="platform/packages/inputmethods/LeanbackIME" />
   <remove-project name="platform/packages/apps/UniversalMediaPlayer" />
-  <remove-project name="platform/packages/apps/TV" />
-  <remove-project name="platform/packages/apps/Test/connectivity" />
+  <remove-project name="LineageOS/android_packages_apps_TV" />
   <remove-project name="platform/packages/apps/SampleLocationAttribution" />
   <remove-project name="platform/packages/apps/Provision" />
   <remove-project name="platform/packages/apps/OneTimeInitializer" />
