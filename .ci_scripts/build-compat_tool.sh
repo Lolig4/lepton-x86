@@ -24,8 +24,7 @@ ln -sf lepton fauxdroid
 cp -ra ${PROJECT_DIR}/compat_tool/toolmanifest.vdf .
 cp -ra ${PROJECT_DIR}/README.md .
 cp -ra ${PROJECT_DIR}/LICENSE.md .
-cp -ra ${PROJECT_DIR}/LICENSE.AOSP.image .
-cp -ra ${PROJECT_DIR}/LICENSE.lepton .
+cp -ra ${PROJECT_DIR}/LICENSES .
 mkdir -p liblepton
 cp -a ${PROJECT_DIR}/compat_tool/liblepton/*.sh liblepton
 cp -a ${PROJECT_DIR}/compat_tool/liblepton/lepton.seccomp.json liblepton
