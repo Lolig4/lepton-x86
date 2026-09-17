@@ -601,7 +601,7 @@ function kill_container()
         lock_lepton
     fi
 
-    systemctl stop "lepton-${CONTEXT}.slice" 2>/dev/null || true
+    systemctl --user stop "lepton-${CONTEXT}.slice" 2>/dev/null || true
 }
 
 function kill_all()
