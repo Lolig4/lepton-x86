@@ -9,8 +9,7 @@
   <remove-project name="platform/packages/providers/TvProvider" />
   <remove-project name="platform/packages/inputmethods/LeanbackIME" />
   <remove-project name="platform/packages/apps/UniversalMediaPlayer" />
-  <remove-project name="platform/packages/apps/TV" />
-  <remove-project name="platform/packages/apps/Test/connectivity" />
+  <remove-project name="LineageOS/android_packages_apps_TV" />
   <remove-project name="platform/packages/apps/SampleLocationAttribution" />
   <remove-project name="platform/packages/apps/Provision" />
   <remove-project name="platform/packages/apps/OneTimeInitializer" />
@@ -97,7 +96,6 @@
   <remove-project name="WayDroid/android_packages_apps_WaydroidUpdater" />
   <remove-project name="WayDroid/android_device_waydroid_waydroid" />
   <remove-project name="WayDroid/android_hardware_waydroid" />
-  <remove-project name="WayDroid/android_external_alsa-lib" />
   <remove-project name="WayDroid/android_vendor_waydroid" />
   <remove-project name="platform/external/vulkan-headers" />
 

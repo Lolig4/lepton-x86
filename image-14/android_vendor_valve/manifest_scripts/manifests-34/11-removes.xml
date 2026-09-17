@@ -4,7 +4,6 @@
   <remove-project name="WayDroid/android_packages_apps_WaydroidUpdater" />
   <remove-project name="WayDroid/android_device_waydroid_waydroid" />
   <remove-project name="WayDroid/android_hardware_waydroid" />
-  <remove-project name="WayDroid/android_external_alsa-lib" />
 
   <remove-project name="platform/prebuilts/runtime" />
 </manifest>
