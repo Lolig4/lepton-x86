@@ -415,15 +415,30 @@ case "${COMMAND}" in
         kill_lldb_server
         ;;
     install_completions)
-        COMPLETIONS_PATH="${SCRIPT_DIR}/liblepton/completions.sh"
-        if grep -q "${COMPLETIONS_PATH}" "${HOME}/.bashrc"; then
+        COMPLETIONS_DIR="${XDG_DATA_HOME:-${HOME}/.local/share}/bash-completion/completions"
+        COMPLETIONS_PATH="${COMPLETIONS_DIR}/lepton"
+        PROFILE_PATH="${HOME}/.profile"
+
+        if [ -e "${COMPLETIONS_PATH}" ]; then
             die "Completions already installed!"
         fi
-        cat >>"${HOME}/.bashrc" <<-EOF
+
+        mkdir -p "${COMPLETIONS_DIR}"
+        cp "${SCRIPT_DIR}/liblepton/completions.sh" "${COMPLETIONS_PATH}"
+
+        if grep -qF "alias lepton=" "${PROFILE_PATH}" 2>/dev/null; then
+            die "Lepton alias already installed!"
+        fi
+
+        cat >>"${PROFILE_PATH}" <<EOF
+
+# Lepton
 alias lepton="${SCRIPT_DIR}/lepton"
-[[ -n "\${PS1:-}" ]] && source "${COMPLETIONS_PATH}"
 EOF
-        println "Completions installed, run 'source ~/.bashrc' to load them into this shell"
+
+        println "Completions installed to ${COMPLETIONS_PATH}"
+        println "Lepton alias installed in ${PROFILE_PATH}"
+        println "Restart your shell or run 'source ~/.profile' to load the alias"
         ;;
     ps|list_containers)
         list_containers
