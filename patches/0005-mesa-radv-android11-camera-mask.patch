@@ -1,0 +1,49 @@
+diff --git a/image/android_vendor_valve/waydroid-patches/base-patches-30/external/mesa/9001-radv-define-AHARDWAREBUFFER_USAGE_CAMERA_MASK-for-An.patch b/image/android_vendor_valve/waydroid-patches/base-patches-30/external/mesa/9001-radv-define-AHARDWAREBUFFER_USAGE_CAMERA_MASK-for-An.patch
+new file mode 100644
+index 0000000..9d1e494
+--- /dev/null
++++ b/image/android_vendor_valve/waydroid-patches/base-patches-30/external/mesa/9001-radv-define-AHARDWAREBUFFER_USAGE_CAMERA_MASK-for-An.patch
+@@ -0,0 +1,43 @@
++From eb2948de81ad4db980e8565ad54bc5a89198b70b Mon Sep 17 00:00:00 2001
++From: Lolig4 <Urias.Uhle@web.de>
++Date: Tue, 22 Sep 2026 15:12:59 +0200
++Subject: [PATCH] radv: define AHARDWAREBUFFER_USAGE_CAMERA_MASK for Android 11
++ headers
++
++vk_format_from_android() uses AHARDWAREBUFFER_USAGE_CAMERA_MASK, which the
++NDK headers only gained after Android 11. Building RADV against an Android 11
++(SDK 30) platform tree therefore fails with an undeclared identifier.
++
++The underlying bits are gralloc's BufferUsage::CAMERA_OUTPUT (1 << 17) and
++CAMERA_INPUT (1 << 18), so provide the mask when the header lacks it.
++
++Co-Authored-By: Claude Opus 5 <noreply@anthropic.com>
++---
++ src/amd/vulkan/radv_android.c | 11 +++++++++++
++ 1 file changed, 11 insertions(+)
++
++diff --git a/src/amd/vulkan/radv_android.c b/src/amd/vulkan/radv_android.c
++index 3b8ec10..24495b2 100644
++--- a/src/amd/vulkan/radv_android.c
+++++ b/src/amd/vulkan/radv_android.c
++@@ -146,6 +146,17 @@ fail_create_image:
++ 
++ #if RADV_SUPPORT_ANDROID_HARDWARE_BUFFER
++ 
+++/* Android 11's NDK headers predate the AHardwareBuffer camera usage names.
+++ * The bits themselves are BufferUsage::CAMERA_OUTPUT (1 << 17) and
+++ * CAMERA_INPUT (1 << 18) from android.hardware.graphics.common, which gralloc
+++ * has used all along, so spell the mask out when the header lacks it.  Newer
+++ * headers declare it as an enumerator; a macro defined after the include
+++ * shadows it with the same value.
+++ */
+++#ifndef AHARDWAREBUFFER_USAGE_CAMERA_MASK
+++#define AHARDWAREBUFFER_USAGE_CAMERA_MASK (6UL << 16)
+++#endif
+++
++ static inline VkFormat
++ vk_format_from_android(unsigned android_format, unsigned android_usage)
++ {
++-- 
++2.54.0
++

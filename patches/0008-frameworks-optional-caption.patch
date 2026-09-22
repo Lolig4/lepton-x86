@@ -1,0 +1,32 @@
+diff --git a/image/android_vendor_valve/waydroid-patches/base-patches-30/frameworks/base/9002-base-make-the-freeform-caption-optional.patch b/image/android_vendor_valve/waydroid-patches/base-patches-30/frameworks/base/9002-base-make-the-freeform-caption-optional.patch
+new file mode 100644
+index 0000000..0904131
+--- /dev/null
++++ b/image/android_vendor_valve/waydroid-patches/base-patches-30/frameworks/base/9002-base-make-the-freeform-caption-optional.patch
+@@ -0,0 +1,26 @@
++From 0000000000000000000000000000000000000000 Mon Sep 17 00:00:00 2001
++From: Lepton x86_64 port <lepton-x86_64@localhost>
++Date: Tue, 22 Sep 2026 23:50:00 +0200
++Subject: [PATCH] base: make the freeform caption optional
++
++"base: Always enable caption" draws Android's own title bar on every window
++as soon as multi_windows is on.  On a desktop the compositor already draws a
++title bar, so the window ends up with two of them.  Keep the caption as the
++default and let persist.waydroid.window_decoration=false turn it off.
++---
++ core/java/android/app/WindowConfiguration.java | 3 +++
++ 1 file changed, 3 insertions(+)
++
++diff --git a/core/java/android/app/WindowConfiguration.java b/core/java/android/app/WindowConfiguration.java
++--- a/core/java/android/app/WindowConfiguration.java
+++++ b/core/java/android/app/WindowConfiguration.java
++@@ -689,6 +689,9 @@ public class WindowConfiguration implements Parcelable, Comparable<WindowConfigu
++      * @hide
++      */
++     public boolean hasWindowDecorCaption() {
+++        if (!SystemProperties.getBoolean("persist.waydroid.window_decoration", true)) {
+++            return false;
+++        }
++         if (SystemProperties.getBoolean("persist.waydroid.multi_windows", false)) {
++             return (mWindowingMode == WINDOWING_MODE_FREEFORM
++                 || mWindowingMode == WINDOWING_MODE_FULLSCREEN

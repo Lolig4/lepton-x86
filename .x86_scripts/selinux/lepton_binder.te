@@ -1,0 +1,18 @@
+module lepton_binder 1.0;
+
+require {
+    type spc_t;
+    class binder { call set_context_mgr transfer impersonate };
+}
+
+# Lepton runs Android in a rootless podman container with label=disable,
+# which puts every container process into spc_t.  Android's servicemanager
+# must become the binder context manager of the container's own binderfs
+# instance, and all Android processes then talk to each other over binder.
+# Fedora's policy grants none of that to spc_t:
+#
+#   avc: denied { set_context_mgr } for comm="servicemanager"
+#        scontext=...:spc_t:s0 tcontext=...:spc_t:s0 tclass=binder
+#
+# Every party is spc_t, so the grant is limited to spc_t talking to itself.
+allow spc_t self:binder { call set_context_mgr transfer impersonate };

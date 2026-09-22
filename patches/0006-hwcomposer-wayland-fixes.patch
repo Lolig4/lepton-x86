@@ -1,0 +1,1338 @@
+diff --git a/hwcomposer/Android.bp b/hwcomposer/Android.bp
+index a8c5010..50a949d 100644
+--- a/hwcomposer/Android.bp
++++ b/hwcomposer/Android.bp
+@@ -81,8 +81,14 @@ cc_library_shared {
+         "-Wall",
+         "-Werror",
+     ],
+-    generated_sources: ["wayland_android_client_protocol_sources"],
+-    generated_headers: ["wayland_android_client_protocol_headers"],
++    generated_sources: [
++        "wayland_android_client_protocol_sources",
++        "xdg_decoration_client_protocol_sources",
++    ],
++    generated_headers: [
++        "wayland_android_client_protocol_headers",
++        "xdg_decoration_client_protocol_headers",
++    ],
+ }
+ 
+ // Generate wayland-android protocol source file
+@@ -101,3 +107,20 @@ genrule {
+     cmd: "$(location wayland_scanner) client-header < $(in) > $(out)",
+     out: ["wayland-android-client-protocol.h"],
+ }
++
++// xdg-decoration-unstable-v1 (server-side title bars for cropped app windows),
++// not part of the AOSP wayland-protocols copy
++genrule {
++    name: "xdg_decoration_client_protocol_sources",
++    srcs: ["xdg-decoration-unstable-v1.xml"],
++    tools: ["wayland_scanner"],
++    cmd: "$(location wayland_scanner) code < $(in) > $(out)",
++    out: ["xdg-decoration-unstable-v1-client-protocol.c"],
++}
++genrule {
++    name: "xdg_decoration_client_protocol_headers",
++    srcs: ["xdg-decoration-unstable-v1.xml"],
++    tools: ["wayland_scanner"],
++    cmd: "$(location wayland_scanner) client-header < $(in) > $(out)",
++    out: ["xdg-decoration-unstable-v1-client-protocol.h"],
++}
+diff --git a/hwcomposer/hwcomposer.cpp b/hwcomposer/hwcomposer.cpp
+index ca0d5ad..d6be182 100644
+--- a/hwcomposer/hwcomposer.cpp
++++ b/hwcomposer/hwcomposer.cpp
+@@ -345,7 +345,7 @@ static void apply_surface_damage(hwc_layer_1 *hwc_layer, surface_context &surfac
+     });
+ }
+ 
+-static int apply_hwc_layer_to_surface_context(waydroid_hwc_composer_device_1 *pdev, hwc_layer_1 *hwc_layer, size_t hwc_layer_index, surface_context &surface_context, buffer *buf = nullptr) {
++static int apply_hwc_layer_to_surface_context(waydroid_hwc_composer_device_1 *pdev, hwc_layer_1 *hwc_layer, size_t hwc_layer_index, surface_context &surface_context, buffer *buf = nullptr, double scale_x = 0.0, double scale_y = 0.0) {
+     constexpr int acquireWarningMS = 100;
+     int res = -1;
+ 
+@@ -366,7 +366,9 @@ static int apply_hwc_layer_to_surface_context(waydroid_hwc_composer_device_1 *pd
+     // Scaling can only be supported correctly with wp_viewport
+     if (surface_context.viewport) {
+         surface_context.set_crop(rect_apply_transform(hwc_layer->sourceCropf, hwc_layer->transform));
+-        surface_context.set_display_frame(hwc_layer->displayFrame, pdev->display->scale);
++        surface_context.set_display_frame(hwc_layer->displayFrame,
++                                          scale_x > 0.0 ? scale_x : pdev->display->scale,
++                                          scale_y > 0.0 ? scale_y : pdev->display->scale);
+     } else {
+         surface_context.set_buffer_scale(pdev->display->scale);
+     }
+@@ -403,27 +405,27 @@ int apply_hwc_layer_to_window(waydroid_hwc_composer_device_1 *pdev, hwc_layer_1
+ 
+     auto &window_layer = window->get_next_layer();
+ 
+-    if (apply_hwc_layer_to_surface_context(pdev, hwc_layer, hwc_layer_index, window_layer, buf) != 0) {
++    if (apply_hwc_layer_to_surface_context(pdev, hwc_layer, hwc_layer_index, window_layer, buf,
++                                           window->layer_scale_x(pdev->display->scale),
++                                           window->layer_scale_y(pdev->display->scale)) != 0) {
+         return -1;
+     }
+ 
+-    window_layer.set_position(
+-        floor(hwc_layer->displayFrame.left / pdev->display->scale),
+-        floor(hwc_layer->displayFrame.top / pdev->display->scale)
+-    );
+-
++    // Position, scaling and the input mapping of a layer all follow from its
++    // Android rect, the window's crop origin and the user's zoom.
++    window->place_layer(window_layer, hwc_layer->displayFrame, pdev->display->scale);
+     if (window->input_region) {
++        const double sx = window->layer_scale_x(pdev->display->scale);
++        const double sy = window->layer_scale_y(pdev->display->scale);
++        const int32_t origin_x = window->cropped ? window->crop_x : 0;
++        const int32_t origin_y = window->cropped ? window->crop_y : 0;
+         wl_region_add(window->input_region,
+-                      -WINDOW_DECORATION_OUTSET + floor(hwc_layer->displayFrame.left / pdev->display->scale),
+-                      -WINDOW_DECORATION_OUTSET + floor(hwc_layer->displayFrame.top / pdev->display->scale),
+-                      2*WINDOW_DECORATION_OUTSET + ceil((hwc_layer->displayFrame.right - hwc_layer->displayFrame.left) / pdev->display->scale),
+-                      2*WINDOW_DECORATION_OUTSET + ceil((hwc_layer->displayFrame.bottom - hwc_layer->displayFrame.top) / pdev->display->scale));
++                      -WINDOW_DECORATION_OUTSET + floor((hwc_layer->displayFrame.left - origin_x) / sx),
++                      -WINDOW_DECORATION_OUTSET + floor((hwc_layer->displayFrame.top - origin_y) / sy),
++                      2*WINDOW_DECORATION_OUTSET + ceil((hwc_layer->displayFrame.right - hwc_layer->displayFrame.left) / sx),
++                      2*WINDOW_DECORATION_OUTSET + ceil((hwc_layer->displayFrame.bottom - hwc_layer->displayFrame.top) / sy));
+     }
+ 
+-    pdev->display->layers[window_layer.surface] = {
+-            .x = hwc_layer->displayFrame.left,
+-            .y = hwc_layer->displayFrame.top };
+-
+     if (window->display->presentation) {
+         auto feedback = wp_presentation_feedback(window->display->presentation, window_layer.surface);
+         wp_presentation_feedback_add_listener(feedback,&feedback_listener, pdev);
+@@ -785,12 +787,21 @@ static int hwc_open(const struct hw_module_t* module, const char* name,
+         pdev->display->cursor_handler.reset(new subsurface_cursor_handler());
+     }
+ 
+-    auto first_window = window::create(pdev->display, pdev->should_compose, "Waydroid", "0", {0, 0, 0, 255});
+     if (!property_get_bool("waydroid.background_start", true)) {
++        auto first_window = window::create(pdev->display, pdev->should_compose, "Waydroid", "0", {0, 0, 0, 255});
+         pdev->display->windows.add("Waydroid", std::move(first_window));
+         property_set("waydroid.active_apps", "Waydroid");
+     } else {
+-        first_window.reset();
++        // Background start shows no full-UI window, so do not create one just
++        // to calibrate: it would flash on screen.  wl_output already carries
++        // the size; only fall back to the old path if it did not.
++        wl_display_roundtrip(pdev->display->display);
++        if (pdev->display->full_width > 0 && pdev->display->full_height > 0) {
++            calibrate_from_output(pdev->display);
++        } else {
++            auto first_window = window::create(pdev->display, pdev->should_compose, "Waydroid", "0", {0, 0, 0, 255});
++            first_window.reset();
++        }
+     }
+ 
+     pdev->vsync_callback_enabled = true;
+diff --git a/hwcomposer/modes/multi-window.cpp b/hwcomposer/modes/multi-window.cpp
+index bfc251a..8446af3 100644
+--- a/hwcomposer/modes/multi-window.cpp
++++ b/hwcomposer/modes/multi-window.cpp
+@@ -28,7 +28,17 @@
+ #include <log/log.h>
+ #include <cutils/properties.h>
+ 
++#include <algorithm>
++#include <map>
++
+ constexpr hwc_color_t color_transparent = {0, 0, 0, 0};
++constexpr hwc_color_t color_opaque = {0, 0, 0, 255};
++
++// waydroid.crop_app_windows: give every app its own desktop window sized to
++// its task instead of a transparent overlay covering the whole screen.
++static bool crop_app_windows() {
++    return property_get_bool("waydroid.crop_app_windows", false);
++}
+ 
+ window *multi_window_mode::get_window(waydroid_hwc_composer_device_1 *pdev, layer_info &layer_info) {
+     auto &windows = pdev->display->windows;
+@@ -37,12 +47,23 @@ window *multi_window_mode::get_window(waydroid_hwc_composer_device_1 *pdev, laye
+         if (is_blacklisted(pdev, layer_info.aid, layer_info.component))
+             return nullptr;
+ 
++        window *window;
+         auto it = windows.find(layer_info.tid);
++        if (it == windows.end() && pdev->display->closing)
++            return nullptr;
+         if (it != windows.end()) {
+-            return it->second.get();
++            window = it->second.get();
++        } else if (crop_app_windows()) {
++            window = windows.add(pdev, layer_info.tid, layer_info.aid, layer_info.tid, color_opaque, true);
+         } else {
+-            return windows.add(pdev, layer_info.tid, layer_info.aid, layer_info.tid, color_transparent);
++            window = windows.add(pdev, layer_info.tid, layer_info.aid, layer_info.tid, color_transparent);
+         }
++        if (window && window->cropped) {
++            auto bounds = task_bounds.find(layer_info.tid);
++            if (bounds != task_bounds.end())
++                window->set_crop(bounds->second);
++        }
++        return window;
+     } else if (layer_info.type == LayerSplitType::RawName) {
+         if (layer_info.aid == "InputMethod") {
+             auto it = windows.find("InputMethod");
+@@ -70,11 +91,33 @@ int multi_window_mode::prepare(hwc_layer_1* hwc_layer, size_t) {
+ 
+ int multi_window_mode::setup_set(waydroid_hwc_composer_device_1* pdev, hwc_display_contents_1_t* contents) {
+     layer_infos.setup(pdev, contents->hwLayers, contents->numHwLayers);
++
++    task_bounds.clear();
++    for (size_t i = 0; i < contents->numHwLayers; ++i) {
++        const auto &layer = contents->hwLayers[i];
++        const auto &info = layer_infos[i];
++        if (info.type != LayerSplitType::TID || !can_handle_layer(layer)
++                || (layer.flags & HWC_IS_CURSOR_LAYER))
++            continue;
++        const hwc_rect_t &f = layer.displayFrame;
++        if (f.right <= f.left || f.bottom <= f.top)
++            continue;
++        auto [it, inserted] = task_bounds.emplace(info.tid, f);
++        if (!inserted) {
++            it->second.left = std::min(it->second.left, f.left);
++            it->second.top = std::min(it->second.top, f.top);
++            it->second.right = std::max(it->second.right, f.right);
++            it->second.bottom = std::max(it->second.bottom, f.bottom);
++        }
++    }
+     return 0;
+ }
+ 
+ int multi_window_mode::cleanup_stale_windows(waydroid_hwc_composer_device_1* pdev,
+                                              hwc_display_contents_1_t* contents) {
++    // A task whose layers are missing gets a short grace period: while it is
++    // being resized Android tears its surfaces down and builds them again.
++    constexpr int keep_frames = 45;
+     pdev->display->windows.erase_if([&](const auto& it){
+         const auto& key = it.first;
+         for (size_t i = 0; i < contents->numHwLayers; ++i) {
+@@ -82,10 +125,11 @@ int multi_window_mode::cleanup_stale_windows(waydroid_hwc_composer_device_1* pde
+             const auto &layer = contents->hwLayers[i];
+             if (can_handle_layer(layer)
+                 && layer_info.type != LayerSplitType::Empty && layer_info.key() == key) {
++                it.second->missing_frames = 0;
+                 return false;
+             }
+         }
+-        return true;
++        return ++it.second->missing_frames > keep_frames;
+     });
+ 
+     pdev->display->ignored_apps.clear();
+diff --git a/hwcomposer/modes/multi-window.h b/hwcomposer/modes/multi-window.h
+index e5afee6..6d9c6c7 100644
+--- a/hwcomposer/modes/multi-window.h
++++ b/hwcomposer/modes/multi-window.h
+@@ -27,10 +27,14 @@
+ 
+ #include "waydroid_mode.h"
+ 
++#include <map>
++
+ class multi_window_mode : public waydroid_mode {
+     split_layer_names_helper layer_infos;
++    // Union of the display frames of all layers per task (key: task ID)
++    std::map<std::string, hwc_rect_t> task_bounds;
+ 
+-    static window *get_window(waydroid_hwc_composer_device_1 *pdev, layer_info &layer_info);
++    window *get_window(waydroid_hwc_composer_device_1 *pdev, layer_info &layer_info);
+     static bool can_handle_layer(const hwc_layer_1& layer);
+ 
+   public:
+diff --git a/hwcomposer/modes/single-window.cpp b/hwcomposer/modes/single-window.cpp
+index 14ffccb..b9245bb 100644
+--- a/hwcomposer/modes/single-window.cpp
++++ b/hwcomposer/modes/single-window.cpp
+@@ -28,6 +28,16 @@
+ #include <log/log.h>
+ #include <cutils/properties.h>
+ 
++#include <algorithm>
++
++constexpr hwc_color_t color_opaque = {0, 0, 0, 255};
++
++// waydroid.crop_app_windows: give the app a desktop window of its own size
++// instead of one the size of the whole Android display.
++static bool crop_app_windows() {
++    return property_get_bool("waydroid.crop_app_windows", false);
++}
++
+ bool single_window_mode_base::should_show() const {
+     return !target_layer_tid.empty();
+ }
+@@ -36,32 +46,71 @@ window *single_window_mode_base::get_window(waydroid_hwc_composer_device_1 *pdev
+     assert(should_show());
+ 
+     auto &windows = pdev->display->windows;
++    window *window;
+     auto it = windows.find(target_layer_tid);
+     if (it != windows.end()) {
+-        return it->second.get();
++        window = it->second.get();
++    } else if (crop_app_windows()) {
++        window = windows.add(pdev, target_layer_tid, target_layer_aid, target_layer_tid,
++                             color_opaque, true);
+     } else {
+-        return windows.add(pdev, target_layer_tid, target_layer_aid, target_layer_tid);
++        window = windows.add(pdev, target_layer_tid, target_layer_aid, target_layer_tid);
++    }
++    if (window && window->cropped) {
++        auto bounds = task_bounds.find(target_layer_tid);
++        if (bounds != task_bounds.end())
++            window->set_crop(bounds->second);
+     }
++    return window;
+ }
+ 
+ int single_window_mode_base::setup_set(waydroid_hwc_composer_device_1* pdev, hwc_display_contents_1_t* contents) {
+     layer_infos.setup(pdev, contents->hwLayers, contents->numHwLayers);
++
++    // Collect the display frames of every task; which one is shown is decided
++    // in cleanup_stale_windows, which runs after this.
++    task_bounds.clear();
++    for (size_t i = 0; i < contents->numHwLayers; ++i) {
++        const auto &layer = contents->hwLayers[i];
++        const auto &info = layer_infos[i];
++        if (info.type != LayerSplitType::TID
++                || (layer.flags & (HWC_SKIP_LAYER | HWC_IS_CURSOR_LAYER)))
++            continue;
++        const hwc_rect_t &f = layer.displayFrame;
++        if (f.right <= f.left || f.bottom <= f.top)
++            continue;
++        auto [it, inserted] = task_bounds.emplace(info.tid, f);
++        if (!inserted) {
++            it->second.left = std::min(it->second.left, f.left);
++            it->second.top = std::min(it->second.top, f.top);
++            it->second.right = std::max(it->second.right, f.right);
++            it->second.bottom = std::max(it->second.bottom, f.bottom);
++        }
++    }
+     return 0;
+ }
+ 
+ int single_window_mode_base::cleanup_stale_windows(waydroid_hwc_composer_device_1* pdev,
+                                                    hwc_display_contents_1_t*) {
+-    auto first_tid_layer = std::find_if(layer_infos.container().cbegin(), layer_infos.container().cend(), [&](const auto& layer_info){
+-        return layer_info.type == LayerSplitType::TID;
+-    });
+-    if (first_tid_layer != layer_infos.container().cend()) {
+-        if (is_blacklisted(pdev, first_tid_layer->aid, first_tid_layer->component)) {
+-            clear_open_windows(pdev);
+-            return 0;
+-        } else if (pdev->display->ignored_apps.count(first_tid_layer->tid) == 0) {
+-            target_layer_tid = first_tid_layer->tid;
+-            target_layer_aid = first_tid_layer->aid;
+-        }
++    // The topmost task that is not hidden.  Taking the first one instead meant
++    // taking whatever sits at the bottom -- with an app started on its own that
++    // is the launcher, which is blacklisted, so every window was dropped and
++    // nothing was shown at all.
++    const layer_info *target = nullptr;
++    for (const auto &layer_info : layer_infos.container()) {
++        if (layer_info.type != LayerSplitType::TID)
++            continue;
++        if (is_blacklisted(pdev, layer_info.aid, layer_info.component))
++            continue;
++        target = &layer_info;
++    }
++    if (!target) {
++        clear_open_windows(pdev);
++        return 0;
++    }
++    if (pdev->display->ignored_apps.count(target->tid) == 0) {
++        target_layer_tid = target->tid;
++        target_layer_aid = target->aid;
+     }
+ 
+     // Close leftover window from full-ui mode
+diff --git a/hwcomposer/modes/single-window.h b/hwcomposer/modes/single-window.h
+index c326ec1..3443bb4 100644
+--- a/hwcomposer/modes/single-window.h
++++ b/hwcomposer/modes/single-window.h
+@@ -27,6 +27,8 @@
+ 
+ #include "waydroid_mode_impl.h"
+ 
++#include <map>
++
+ class single_window_mode_base : public virtual waydroid_mode {
+   protected:
+     split_layer_names_helper layer_infos;
+@@ -34,6 +36,11 @@ class single_window_mode_base : public virtual waydroid_mode {
+     std::string target_layer_tid;
+     std::string target_layer_aid;
+ 
++    // Display frames per task, for cropping the window to the shown task.
++    // Collected for every task because the target is only known afterwards:
++    // the mode object is rebuilt for each frame.
++    std::map<std::string, hwc_rect_t> task_bounds;
++
+     bool should_show() const;
+     window *get_window(waydroid_hwc_composer_device_1 *pdev) const;
+ 
+diff --git a/hwcomposer/wayland-hwc.cpp b/hwcomposer/wayland-hwc.cpp
+index ce1637a..594e057 100644
+--- a/hwcomposer/wayland-hwc.cpp
++++ b/hwcomposer/wayland-hwc.cpp
+@@ -79,6 +79,7 @@
+ #include "relative-pointer-unstable-v1-client-protocol.h"
+ #include "idle-inhibit-unstable-v1-client-protocol.h"
+ #include "fractional-scale-v1-client-protocol.h"
++#include "xdg-decoration-unstable-v1-client-protocol.h"
+ 
+ using ::android::hardware::hidl_string;
+ 
+@@ -194,10 +195,24 @@ finished_calibrating(struct display *d)
+     d->wayland_thread_created = true;
+ }
+ 
++// Calibrate from the size the compositor advertised through wl_output,
++// instead of opening a throwaway maximized window only to read its configure
++// event.  That window is mapped for a moment and shows up as a fullscreen
++// flash before the app's own window appears.
++void
++calibrate_from_output(struct display *d)
++{
++    if (!d->req_width)
++        d->req_width = d->full_width / d->scale;
++    if (!d->req_height)
++        d->req_height = d->full_height / d->scale;
++    finished_calibrating(d);
++}
++
+ static void
+ xdg_toplevel_handle_configure(void *data, struct xdg_toplevel *,
+                               int32_t width, int32_t height,
+-                              struct wl_array *)
++                              struct wl_array *states)
+ {
+     struct window *window = (struct window *)data;
+     struct display *display = window->display;
+@@ -208,6 +223,93 @@ xdg_toplevel_handle_configure(void *data, struct xdg_toplevel *,
+ 		return;
+ 	}
+ 
++    /* While the pointer is still dragging the frame, every step would cost a
++     * full re-layout in Android and the drag would stutter.  Scale during the
++     * drag and hand the final size over when it ends. */
++    bool interactive_resize = false;
++    if (states) {
++        // wl_array_for_each assigns void*, which C++ will not take implicitly
++        for (auto *state = static_cast<uint32_t *>(states->data);
++             reinterpret_cast<const char *>(state) < static_cast<const char *>(states->data) + states->size;
++             ++state) {
++            if (*state == XDG_TOPLEVEL_STATE_RESIZING)
++                interactive_resize = true;
++        }
++    }
++
++    if (window->cropped) {
++        /* Hand the new size to Android so the app lays itself out again.
++         * Scaling the finished picture instead would just stretch it, and the
++         * app would keep the layout of its old size. */
++        int32_t want_w = (int32_t)lround(width * display->scale);
++        int32_t want_h = (int32_t)lround(height * display->scale);
++
++        // Keep the task on the Android display: it has no room beside it, and
++        // bounds reaching past the edge come back clipped.
++        const int32_t disp_w = (int32_t)lround(display->width * display->scale);
++        const int32_t disp_h = (int32_t)lround(display->height * display->scale);
++        want_w = std::min(want_w, disp_w);
++        want_h = std::min(want_h, disp_h);
++        int32_t at_x = std::max(0, std::min(window->crop_x, disp_w - want_w));
++        int32_t at_y = std::max(0, std::min(window->crop_y, disp_h - want_h));
++
++        // While dragging, Android is told the new size at most every 120 ms:
++        // every step would be a full re-layout and the drag would stutter.
++        auto now = std::chrono::steady_clock::now();
++        bool too_soon = interactive_resize
++                && now - window->last_resize < std::chrono::milliseconds(120);
++
++        bool resized = false;
++        // A couple of pixels of difference are not worth a round trip: the
++        // answer changes our geometry, which makes the compositor configure
++        // again.
++        if (!too_soon
++                && display->task != nullptr && window->taskID != "0" && window->taskID != "none"
++                && want_w > 0 && want_h > 0
++                && (abs(want_w - window->crop_w) > 2 || abs(want_h - window->crop_h) > 2)) {
++            auto call = [&]() {
++                return display->task->resizeTask(stoi(window->taskID), at_x, at_y,
++                                                 at_x + want_w, at_y + want_h);
++            };
++            auto ret = call();
++            if (!ret.isOk()) {
++                // The handle is from hwc startup and may point at a service
++                // that has been restarted since.
++                ALOGI("resize: task service call failed (%s), reconnecting",
++                      ret.description().c_str());
++                display->task = IWaydroidTask::getService();
++                if (display->task != nullptr)
++                    ret = call();
++            }
++            // resizeTask answers false for a task that was already at those
++            // bounds, so the transport result is what tells us it went through.
++            resized = ret.isOk();
++            if (resized) {
++                window->last_resize = now;
++                if (!window->resize_pending) {
++                    window->resize_pending = true;
++                    window->resize_asked_at = now;
++                }
++            }
++        }
++        // An app that does not answer a resize request within half a second
++        // will not answer it at all.
++        if (window->resize_pending
++                && now - window->resize_asked_at > std::chrono::milliseconds(500)) {
++            window->resize_pending = false;
++            window->task_resizable = false;
++        }
++
++        // Scale to bridge the gap: an app that takes the new size reaches it a
++        // few frames later and the factor becomes 1 again, one that refuses
++        // (Subway Surfers and other fixed-size games) keeps its aspect ratio.
++        std::scoped_lock lock(display->windowsMutex);
++        window->want_w = want_w;
++        window->want_h = want_h;
++        window->match_wanted_size();
++        return;
++    }
++
+     display->req_width = width;
+     display->req_height = height;
+ }
+@@ -236,6 +338,8 @@ xdg_toplevel_handle_close(void *data, struct xdg_toplevel *)
+         }
+     }
+ 
++    display->closing = true;
++
+     std::scoped_lock lock(window->display->windowsMutex);
+     std::string key;
+     if (window->taskID != "0" && window->taskID != "none") {
+@@ -345,11 +449,11 @@ void surface_context::set_crop(hwc_frect_t crop) {
+                            wl_fixed_from_double(height));
+ }
+ 
+-void surface_context::set_display_frame(hwc_rect_t rect, double scale) {
++void surface_context::set_display_frame(hwc_rect_t rect, double scale_x, double scale_y) {
+     assert(viewport);
+ 
+-    int width = static_cast<int>(ceil((rect.right - rect.left) / scale));
+-    int height = static_cast<int>(ceil((rect.bottom - rect.top) / scale));
++    int width = static_cast<int>(ceil((rect.right - rect.left) / scale_x));
++    int height = static_cast<int>(ceil((rect.bottom - rect.top) / scale_y));
+ 
+     wp_viewport_set_destination(viewport,
+                                 std::max(1, width),
+@@ -404,6 +508,127 @@ void window::set_app_id(std::string appID) {
+     }
+ }
+ 
++// Resize a cropped window to the task bounds (Android pixels).  Only sets
++// pending state, the parent surface is committed at the end of hwc_set.
++void window::set_crop(const hwc_rect_t &bounds) {
++    int32_t w = bounds.right - bounds.left;
++    int32_t h = bounds.bottom - bounds.top;
++    if (!cropped || w <= 0 || h <= 0)
++        return;
++    if (bounds.left == crop_x && bounds.top == crop_y && w == crop_w && h == crop_h)
++        return;
++
++    bool first = crop_w == 0;
++    if (!first && (w != crop_w || h != crop_h)) {
++        // Android moved: the task takes sizes from us after all.
++        task_resizable = true;
++        resize_pending = false;
++    }
++    crop_x = bounds.left;
++    crop_y = bounds.top;
++    crop_w = w;
++    crop_h = h;
++
++    match_wanted_size();
++    if (first) {
++        wl_surface_attach(surface, bg_buffer, 0, 0);
++        wp_viewport_set_source(viewport, wl_fixed_from_int(0), wl_fixed_from_int(0), wl_fixed_from_int(1), wl_fixed_from_int(1));
++    }
++    apply_geometry();
++}
++
++// Window size = task size * user zoom, in compositor logical pixels.
++void window::apply_geometry() {
++    if (!cropped || crop_w == 0)
++        return;
++
++    int32_t lw = std::max(1, (int32_t)ceil(crop_w * user_scale_x / display->scale));
++    int32_t lh = std::max(1, (int32_t)ceil(crop_h * user_scale_y / display->scale));
++
++    xdg_surface_set_window_geometry(xdg_surface, 0, 0, lw, lh);
++    // Small enough to be shrunk, no upper limit
++    xdg_toplevel_set_min_size(xdg_toplevel, std::max(1, lw / 8), std::max(1, lh / 8));
++
++    struct wl_region *region = wl_compositor_create_region(display->compositor);
++    wl_region_add(region, 0, 0, lw, lh);
++    wl_surface_set_opaque_region(surface, region);
++    wl_region_destroy(region);
++
++    wl_surface_damage(surface, 0, 0, INT32_MAX, INT32_MAX);
++    wp_viewport_set_destination(viewport, lw, lh);
++}
++
++// Place a layer inside the window, taking crop origin and user zoom into
++// account, and remember the rect so a resize can redo this without the app
++// drawing anything.
++double window::layer_scale_x(double display_scale) const {
++    return display_scale / (cropped ? user_scale_x : 1.0);
++}
++
++double window::layer_scale_y(double display_scale) const {
++    return display_scale / (cropped ? user_scale_y : 1.0);
++}
++
++void window::place_layer(window::layer &l, const hwc_rect_t &frame, double display_scale, bool commit_layer) {
++    const double sx = layer_scale_x(display_scale);
++    const double sy = layer_scale_y(display_scale);
++    const int32_t origin_x = cropped ? crop_x : 0;
++    const int32_t origin_y = cropped ? crop_y : 0;
++
++    l.frame = frame;
++    l.has_frame = true;
++
++    l.set_position(floor((frame.left - origin_x) / sx), floor((frame.top - origin_y) / sy));
++    if (commit_layer && l.viewport) {
++        // Redoing the scaling of an already drawn layer needs its own commit
++        l.set_display_frame(frame, sx, sy);
++        wl_surface_commit(l.surface);
++    }
++
++    display->layers[l.surface] = {
++            .x = frame.left,
++            .y = frame.top,
++            .scale_x = cropped ? user_scale_x : 1.0,
++            .scale_y = cropped ? user_scale_y : 1.0 };
++}
++
++// Scale so the window covers what the compositor asked for.  Called after a
++// resize request and whenever Android reports new task bounds.
++void window::match_wanted_size() {
++    if (!cropped || crop_w <= 0 || crop_h <= 0 || want_w <= 0 || want_h <= 0)
++        return;
++    double sx = (double)want_w / crop_w;
++    double sy = (double)want_h / crop_h;
++    if (!task_resizable) {
++        // Stretching a game that renders at a fixed size distorts it, so use
++        // the same factor on both axes and let the window follow that.
++        sx = sy = std::min(sx, sy);
++    }
++    set_user_scale(sx, sy);
++}
++
++// Zoom the window contents.  Called from the wayland thread when the user
++// resizes the window, so it redraws what is already on screen.
++void window::set_user_scale(double scale_x, double scale_y) {
++    if (!cropped)
++        return;
++    scale_x = std::min(std::max(scale_x, 0.2), 8.0);
++    scale_y = std::min(std::max(scale_y, 0.2), 8.0);
++    if (fabs(scale_x - user_scale_x) < 0.001 && fabs(scale_y - user_scale_y) < 0.001)
++        return;
++
++    user_scale_x = scale_x;
++    user_scale_y = scale_y;
++    apply_geometry();
++
++    for (auto &l : layers) {
++        if (l.has_frame)
++            place_layer(l, l.frame, display->scale, true);
++    }
++    wl_surface_commit(surface);
++    wl_display_flush(display->display);
++}
++
+ void window::minimize() {
+     if (xdg_toplevel) {
+         xdg_toplevel_set_minimized(xdg_toplevel);
+@@ -413,6 +638,8 @@ void window::minimize() {
+ }
+ 
+ window::~window() {
++    if (decoration)
++        zxdg_toplevel_decoration_v1_destroy(decoration);
+     if (xdg_toplevel)
+         xdg_toplevel_destroy(xdg_toplevel);
+     if (xdg_surface)
+@@ -457,7 +684,7 @@ static const struct wp_fractional_scale_v1_listener fractional_scale_listener =
+ };
+ 
+ std::unique_ptr<window>
+-window::create(struct display *display, bool use_subsurfaces, std::string appID, std::string taskID, hwc_color_t color)
++window::create(struct display *display, bool use_subsurfaces, std::string appID, std::string taskID, hwc_color_t color, bool crop)
+ {
+     std::unique_ptr<window> window { new struct window() };
+     if (!window)
+@@ -471,6 +698,9 @@ window::create(struct display *display, bool use_subsurfaces, std::string appID,
+     window->taskID = std::move(taskID);
+     window->dedicated_background_surface = true;
+     window->bg_buffer = nullptr;
++    // Cropping needs the viewport-scaled background surface below
++    window->cropped = crop && display->subcompositor && display->viewporter && display->wm_base &&
++            !property_get_bool("persist.waydroid.no_background_subsurface", false);
+ 
+     int fd = syscall(SYS_memfd_create, "buffer", 0);
+     ftruncate(fd, 4);
+@@ -496,6 +726,15 @@ window::create(struct display *display, bool use_subsurfaces, std::string appID,
+         window->xdg_toplevel = xdg_surface_get_toplevel(window->xdg_surface);
+         assert(window->xdg_toplevel);
+         xdg_toplevel_add_listener(window->xdg_toplevel, &xdg_toplevel_listener, window.get());
++
++        // A cropped window is an ordinary desktop window: let the compositor
++        // draw a title bar so it can be moved and closed like any other.
++        if (window->cropped && display->decoration_manager) {
++            window->decoration = zxdg_decoration_manager_v1_get_toplevel_decoration(
++                    display->decoration_manager, window->xdg_toplevel);
++            zxdg_toplevel_decoration_v1_set_mode(window->decoration,
++                    ZXDG_TOPLEVEL_DECORATION_V1_MODE_SERVER_SIDE);
++        }
+     } else if (display->shell) {
+         window->shell_surface =
+             wl_shell_get_shell_surface(display->shell, window->surface);
+@@ -506,7 +745,7 @@ window::create(struct display *display, bool use_subsurfaces, std::string appID,
+         abort();
+     }
+ 
+-    if (display->isMaximized || calibrating) {
++    if ((display->isMaximized && !window->cropped) || calibrating) {
+         window->set_maximize(true);
+     }
+     // Set title
+@@ -523,6 +762,19 @@ window::create(struct display *display, bool use_subsurfaces, std::string appID,
+ 
+     wl_surface_commit(window->surface);
+ 
++    // xdg-shell requires waiting for the first configure event of *every*
++    // surface before attaching a buffer to it.  This used to happen only for
++    // the first window ("calibrating"), which is all single-window mode ever
++    // creates; in multi-window mode each further app window attached a buffer
++    // straight away and strict compositors kill the client for it:
++    //   xdg_surface@26: error 3: attached a buffer before configure event
++    // (seen on KWin/Plasma 6; gamescope and weston let it pass).
++    if (window->xdg_surface) {
++        do {
++            wl_display_roundtrip(display->display);
++        } while (!window->configured);
++    }
++
+     if (calibrating) {
+         // Wait for first configure event
+         do {
+@@ -565,18 +817,18 @@ window::create(struct display *display, bool use_subsurfaces, std::string appID,
+             window->set_maximize(false);
+     }
+ 
+-    if (display->wm_base)
++    if (display->wm_base && !window->cropped)
+         xdg_surface_set_window_geometry(window->xdg_surface, 0, 0, display->width, display->height);
+ 
+     struct wl_region *region = wl_compositor_create_region(display->compositor);
+-    if (color.a == 0) {
++    if (color.a == 0 || window->cropped) {
+         wl_surface_set_input_region(window->surface, region);
+         if (display->system_version >= 33)
+             window->input_region = region;
+         else
+             wl_region_destroy(region);
+     }
+-    if (color.a == 255) {
++    if (color.a == 255 && !window->cropped) {
+         wl_region_add(region, 0, 0, display->width, display->height);
+         wl_surface_set_opaque_region(window->surface, region);
+         wl_region_destroy(region);
+@@ -605,6 +857,11 @@ window::create(struct display *display, bool use_subsurfaces, std::string appID,
+     window->bg_buffer = wl_shm_pool_create_buffer(pool, 0, 1, 1, 4, WL_SHM_FORMAT_ARGB8888);
+     wl_shm_pool_destroy(pool);
+ 
++    if (window->cropped) {
++        // Size (and first buffer) come with the first frame, see set_crop()
++        return window;
++    }
++
+     wl_surface_attach(window->surface, window->bg_buffer, 0, 0);
+     wl_surface_damage(window->surface, 0, 0, INT32_MAX, INT32_MAX);
+     wp_viewport_set_source(window->viewport, wl_fixed_from_int(0), wl_fixed_from_int(0), wl_fixed_from_int(1), wl_fixed_from_int(1));
+@@ -891,8 +1148,15 @@ pointer_handle_motion(void *data, struct wl_pointer *,
+         x = int(x * display->scale);
+         y = int(y * display->scale);
+     }
+-    x += display->layers[display->pointer_surface].x;
+-    y += display->layers[display->pointer_surface].y;
++    {
++        const auto &frame = display->layers[display->pointer_surface];
++        if (frame.scale_x > 0 && frame.scale_x != 1.0)
++            x = int(x / frame.scale_x);
++        if (frame.scale_y > 0 && frame.scale_y != 1.0)
++            y = int(y / frame.scale_y);
++        x += frame.x;
++        y += frame.y;
++    }
+ 
+     ADD_EVENT(EV_ABS, ABS_X, x);
+     ADD_EVENT(EV_ABS, ABS_Y, y);
+@@ -1130,8 +1394,15 @@ touch_handle_down(void *data, struct wl_touch *,
+         x = int(x * display->scale);
+         y = int(y * display->scale);
+     }
+-    x += display->layers[surface].x;
+-    y += display->layers[surface].y;
++    {
++        const auto &frame = display->layers[surface];
++        if (frame.scale_x > 0 && frame.scale_x != 1.0)
++            x = int(x / frame.scale_x);
++        if (frame.scale_y > 0 && frame.scale_y != 1.0)
++            y = int(y / frame.scale_y);
++        x += frame.x;
++        y += frame.y;
++    }
+ 
+     ADD_EVENT(EV_ABS, ABS_MT_SLOT, touch_id);
+     ADD_EVENT(EV_ABS, ABS_MT_TRACKING_ID, touch_id);
+@@ -1202,8 +1473,15 @@ touch_handle_motion(void *data, struct wl_touch *,
+             x = int(x * display->scale);
+             y = int(y * display->scale);
+         }
+-        x += display->layers[display->touch_surfaces[id]].x;
+-        y += display->layers[display->touch_surfaces[id]].y;
++        {
++            const auto &frame = display->layers[display->touch_surfaces[id]];
++            if (frame.scale_x > 0 && frame.scale_x != 1.0)
++                x = int(x / frame.scale_x);
++            if (frame.scale_y > 0 && frame.scale_y != 1.0)
++                y = int(y / frame.scale_y);
++            x += frame.x;
++            y += frame.y;
++        }
+ 
+         ADD_EVENT(EV_ABS, ABS_MT_SLOT, touch_id);
+         ADD_EVENT(EV_ABS, ABS_MT_TRACKING_ID, touch_id);
+@@ -1670,8 +1948,15 @@ tablet_tool_motion(void *data, struct zwp_tablet_tool_v2 *,
+             x = int(x * display->scale);
+             y = int(y * display->scale);
+         }
+-        x += display->layers[display->tablet_surface].x;
+-        y += display->layers[display->tablet_surface].y;
++        {
++            const auto &frame = display->layers[display->tablet_surface];
++            if (frame.scale_x > 0 && frame.scale_x != 1.0)
++                x = int(x / frame.scale_x);
++            if (frame.scale_y > 0 && frame.scale_y != 1.0)
++                y = int(y / frame.scale_y);
++            x += frame.x;
++            y += frame.y;
++        }
+ 
+         ADD_EVENT(EV_ABS, ABS_X, x);
+         ADD_EVENT(EV_ABS, ABS_Y, y);
+@@ -1933,6 +2218,9 @@ registry_handle_global(void *data, struct wl_registry *registry,
+     } else if (strcmp(interface, wp_fractional_scale_manager_v1_interface.name) == 0) {
+         d->fractional_scale_manager = (struct wp_fractional_scale_manager_v1*)wl_registry_bind(registry, id,
+                 &wp_fractional_scale_manager_v1_interface, 1);
++    } else if (strcmp(interface, zxdg_decoration_manager_v1_interface.name) == 0) {
++        d->decoration_manager = (struct zxdg_decoration_manager_v1 *)wl_registry_bind(registry, id,
++                &zxdg_decoration_manager_v1_interface, 1);
+     } else if (strcmp(interface, wl_data_device_manager_interface.name) == 0) {
+         d->data_device_manager = (struct wl_data_device_manager *)wl_registry_bind(registry, id,
+                 &wl_data_device_manager_interface, std::min(version,  3U));
+@@ -1984,12 +2272,12 @@ wayland_log_handler (const char *format, va_list args)
+     LOG_PRI_VA (ANDROID_LOG_ERROR, "wayland-hwc", format, args);
+ }
+ 
+-window *open_windows::add(waydroid_hwc_composer_device_1 *pdev, const std::string& key, const std::string& aid, const std::string& tid, hwc_color_t color) {
++window *open_windows::add(waydroid_hwc_composer_device_1 *pdev, const std::string& key, const std::string& aid, const std::string& tid, hwc_color_t color, bool crop) {
+     window *window = nullptr;
+     update([&](){
+         auto res = windows.emplace(
+             key,
+-            window::create(pdev->display, pdev->should_compose, aid, tid, color)
++            window::create(pdev->display, pdev->should_compose, aid, tid, color, crop)
+         );
+         assert(res.second);
+         window = res.first->second.get();
+diff --git a/hwcomposer/wayland-hwc.h b/hwcomposer/wayland-hwc.h
+index 775e457..20a4f17 100644
+--- a/hwcomposer/wayland-hwc.h
++++ b/hwcomposer/wayland-hwc.h
+@@ -57,6 +57,7 @@
+ #include <EGL/egl.h>
+ #include <EGL/eglext.h>
+ 
++#include <chrono>
+ #include <functional>
+ #include <unordered_map>
+ #include <unordered_set>
+@@ -92,6 +93,10 @@ enum class GrallocType {
+ struct layerFrame {
+     int x;
+     int y;
++    // Extra zoom the user applied by resizing the window; surface local input
++    // coordinates have to be divided by it to get back to Android pixels.
++    double scale_x = 1.0;
++    double scale_y = 1.0;
+ };
+ 
+ struct handleExt {
+@@ -166,7 +171,7 @@ struct surface_context {
+     // Requires the transformed rectangle
+     void set_crop(hwc_frect_t crop);
+     // TODO: This should not require scale. Scaling handling is broken
+-    void set_display_frame(hwc_rect_t rect, double scale);
++    void set_display_frame(hwc_rect_t rect, double scale_x, double scale_y);
+ };
+ 
+ struct window {
+@@ -182,6 +187,11 @@ struct window {
+         layer &operator=(layer &&rhs);
+ 
+         void set_position(int32_t x, int32_t y);
++
++        // Android rect this layer last showed, needed to rescale it when the
++        // window is resized without the app drawing a new frame
++        hwc_rect_t frame {};
++        bool has_frame = false;
+     };
+ 
+     struct display *display;
+@@ -198,6 +208,37 @@ struct window {
+     struct zwp_locked_pointer_v1 *locked_pointer;
+ 
+     struct zwp_idle_inhibitor_v1 *idle_inhibitor;
++    struct zxdg_toplevel_decoration_v1 *decoration;
++
++    /* Cropped app window: the toplevel only covers the task bounds (Android
++     * pixels) instead of the whole Android display.  crop_w == 0 means the
++     * size is not known yet and nothing is mapped. */
++    bool cropped;
++    int32_t crop_x, crop_y, crop_w, crop_h;
++    /* When the size was last handed to Android, for throttling during a drag */
++    std::chrono::steady_clock::time_point last_resize {};
++
++    /* Size the compositor asked for, in Android pixels.  Whatever Android does
++     * not take -- apps that refuse to be resized, minimum sizes -- is made up
++     * for by scaling, so the window is always filled. */
++    int32_t want_w = 0, want_h = 0;
++
++    /* Whether Android actually resizes this task.  Games with a fixed size
++     * refuse, and their window keeps the aspect ratio instead of stretching. */
++    bool task_resizable = true;
++    std::chrono::steady_clock::time_point resize_asked_at {};
++    bool resize_pending = false;
++
++    /* Frames in a row without a layer of this task.  Resizing a task makes
++     * Android rebuild its surfaces, and the window must not be thrown away
++     * for those few frames -- it would take the app with it. */
++    int missing_frames = 0;
++
++    /* Zoom applied on top of the task size when the user resizes the window.
++     * X and Y are independent, so dragging a corner changes the aspect ratio
++     * instead of leaving bars beside the app. */
++    double user_scale_x = 1.0;
++    double user_scale_y = 1.0;
+ 
+     std::vector<layer> layers;
+ 
+@@ -215,7 +256,7 @@ struct window {
+ 
+     ~window();
+ 
+-    static std::unique_ptr<window> create(struct display *display, bool use_subsurfaces, std::string appID, std::string taskID, hwc_color_t color);
++    static std::unique_ptr<window> create(struct display *display, bool use_subsurfaces, std::string appID, std::string taskID, hwc_color_t color, bool crop = false);
+ 
+     window::layer &get_next_layer();
+     window::layer &create_new_layer();
+@@ -225,6 +266,15 @@ struct window {
+     void set_maximize(bool enabled);
+     void set_title(const char *title);
+     void set_app_id(std::string appID);
++    void set_crop(const hwc_rect_t &bounds);
++    void set_user_scale(double scale_x, double scale_y);
++    void match_wanted_size();
++    void apply_geometry();
++    // Where a layer covering this Android rect goes inside the window
++    void place_layer(layer &l, const hwc_rect_t &frame, double display_scale, bool commit_layer = false);
++    // Scale the layer contents are drawn at: display scale minus the user zoom
++    double layer_scale_x(double display_scale) const;
++    double layer_scale_y(double display_scale) const;
+ 
+   private:
+     window() = default;
+@@ -273,7 +323,7 @@ class open_windows {
+         property_set("waydroid.open_windows", windows_size_str.c_str());
+     }
+ 
+-    window *add(waydroid_hwc_composer_device_1 *pdev, const std::string& key, const std::string& aid, const std::string& tid, hwc_color_t color = {0, 0, 0, 255});
++    window *add(waydroid_hwc_composer_device_1 *pdev, const std::string& key, const std::string& aid, const std::string& tid, hwc_color_t color = {0, 0, 0, 255}, bool crop = false);
+     void add(const std::string& key, std::unique_ptr<window> window);
+     void clear();
+     void erase(const_iterator pos);
+@@ -328,6 +378,7 @@ struct display {
+     struct zwp_idle_inhibit_manager_v1 *idle_manager;
+     struct wp_fractional_scale_manager_v1 *fractional_scale_manager;
+     struct wl_data_device_manager *data_device_manager;
++    struct zxdg_decoration_manager_v1 *decoration_manager;
+     struct wl_data_device *data_device;
+ 
+     int system_version;
+@@ -386,6 +437,10 @@ struct display {
+     bool supports_cursor_hw_buffer;
+ 
+     bool isMaximized;
++    /* Set once the user closed an app window: Android still hands out a frame
++     * or two while it tears the app down, and a fresh window for those would
++     * only flash up right before the container stops. */
++    std::atomic<bool> closing {false};
+     sp<IWaydroidTask> task;
+ };
+ 
+@@ -398,5 +453,8 @@ snapshot_inactive_app_window(struct display *display, struct window *window);
+ 
+ struct display *
+ create_display(const char* gralloc);
++
++void
++calibrate_from_output(struct display *d);
+ void
+ destroy_display(struct display *display);
+diff --git a/hwcomposer/xdg-decoration-unstable-v1.xml b/hwcomposer/xdg-decoration-unstable-v1.xml
+new file mode 100644
+index 0000000..82ca247
+--- /dev/null
++++ b/hwcomposer/xdg-decoration-unstable-v1.xml
+@@ -0,0 +1,160 @@
++<?xml version="1.0" encoding="UTF-8"?>
++<protocol name="xdg_decoration_unstable_v1">
++  <copyright>
++    Copyright © 2018 Simon Ser
++
++    Permission is hereby granted, free of charge, to any person obtaining a
++    copy of this software and associated documentation files (the "Software"),
++    to deal in the Software without restriction, including without limitation
++    the rights to use, copy, modify, merge, publish, distribute, sublicense,
++    and/or sell copies of the Software, and to permit persons to whom the
++    Software is furnished to do so, subject to the following conditions:
++
++    The above copyright notice and this permission notice (including the next
++    paragraph) shall be included in all copies or substantial portions of the
++    Software.
++
++    THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
++    IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
++    FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT.  IN NO EVENT SHALL
++    THE AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
++    LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING
++    FROM, OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER
++    DEALINGS IN THE SOFTWARE.
++  </copyright>
++
++  <interface name="zxdg_decoration_manager_v1" version="1">
++    <description summary="window decoration manager">
++      This interface allows a compositor to announce support for server-side
++      decorations.
++
++      A window decoration is a set of window controls as deemed appropriate by
++      the party managing them, such as user interface components used to move,
++      resize and change a window's state.
++
++      A client can use this protocol to request being decorated by a supporting
++      compositor.
++
++      If compositor and client do not negotiate the use of a server-side
++      decoration using this protocol, clients continue to self-decorate as they
++      see fit.
++
++      Warning! The protocol described in this file is experimental and
++      backward incompatible changes may be made. Backward compatible changes
++      may be added together with the corresponding interface version bump.
++      Backward incompatible changes are done by bumping the version number in
++      the protocol and interface names and resetting the interface version.
++      Once the protocol is to be declared stable, the 'z' prefix and the
++      version number in the protocol and interface names are removed and the
++      interface version number is reset.
++    </description>
++
++    <request name="destroy" type="destructor">
++      <description summary="destroy the decoration manager object">
++        Destroy the decoration manager. This doesn't destroy objects created
++        with the manager.
++      </description>
++    </request>
++
++    <request name="get_toplevel_decoration">
++      <description summary="create a new toplevel decoration object">
++        Create a new decoration object associated with the given toplevel.
++
++        Creating an xdg_toplevel_decoration from an xdg_toplevel which has a
++        buffer attached or committed is a client error, and any attempts by a
++        client to attach or manipulate a buffer prior to the first
++        xdg_toplevel_decoration.configure event must also be treated as
++        errors.
++      </description>
++      <arg name="id" type="new_id" interface="zxdg_toplevel_decoration_v1"/>
++      <arg name="toplevel" type="object" interface="xdg_toplevel"/>
++    </request>
++  </interface>
++
++  <interface name="zxdg_toplevel_decoration_v1" version="1">
++    <description summary="decoration object for a toplevel surface">
++      The decoration object allows the compositor to toggle server-side window
++      decorations for a toplevel surface. The client can request to switch to
++      another mode.
++
++      The xdg_toplevel_decoration object must be destroyed before its
++      xdg_toplevel.
++    </description>
++
++    <enum name="error">
++      <entry name="unconfigured_buffer" value="0"
++        summary="xdg_toplevel has a buffer attached before configure"/>
++      <entry name="already_constructed" value="1"
++        summary="xdg_toplevel already has a decoration object"/>
++      <entry name="orphaned" value="2"
++        summary="xdg_toplevel destroyed before the decoration object"/>
++      <entry name="invalid_mode" value="3" summary="invalid mode"/>
++    </enum>
++
++    <request name="destroy" type="destructor">
++      <description summary="destroy the decoration object">
++        Switch back to a mode without any server-side decorations at the next
++        commit.
++      </description>
++    </request>
++
++    <enum name="mode">
++      <description summary="window decoration modes">
++        These values describe window decoration modes.
++      </description>
++      <entry name="client_side" value="1"
++        summary="no server-side window decoration"/>
++      <entry name="server_side" value="2"
++        summary="server-side window decoration"/>
++    </enum>
++
++    <request name="set_mode">
++      <description summary="set the decoration mode">
++        Set the toplevel surface decoration mode. This informs the compositor
++        that the client prefers the provided decoration mode.
++
++        After requesting a decoration mode, the compositor will respond by
++        emitting an xdg_surface.configure event. The client should then update
++        its content, drawing it without decorations if the received mode is
++        server-side decorations. The client must also acknowledge the configure
++        when committing the new content (see xdg_surface.ack_configure).
++
++        The compositor can decide not to use the client's mode and enforce a
++        different mode instead.
++
++        Clients whose decoration mode depend on the xdg_toplevel state may send
++        a set_mode request in response to an xdg_surface.configure event and wait
++        for the next xdg_surface.configure event to prevent unwanted state.
++        Such clients are responsible for preventing configure loops and must
++        make sure not to send multiple successive set_mode requests with the
++        same decoration mode.
++
++        If an invalid mode is supplied by the client, the invalid_mode protocol
++        error is raised by the compositor.
++      </description>
++      <arg name="mode" type="uint" enum="mode" summary="the decoration mode"/>
++    </request>
++
++    <request name="unset_mode">
++      <description summary="unset the decoration mode">
++        Unset the toplevel surface decoration mode. This informs the compositor
++        that the client doesn't prefer a particular decoration mode.
++
++        This request has the same semantics as set_mode.
++      </description>
++    </request>
++
++    <event name="configure">
++      <description summary="notify a decoration mode change">
++        The configure event configures the effective decoration mode. The
++        configured state should not be applied immediately. Clients must send an
++        ack_configure in response to this event. See xdg_surface.configure and
++        xdg_surface.ack_configure for details.
++
++        A configure event can be sent at any time. The specified mode must be
++        obeyed by the client.
++      </description>
++      <arg name="mode" type="uint" enum="mode" summary="the decoration mode"/>
++    </event>
++  </interface>
++</protocol>
+diff --git a/interfaces/task/1.0/IWaydroidTask.hal b/interfaces/task/1.0/IWaydroidTask.hal
+index 9d1a42a..69e4ddf 100644
+--- a/interfaces/task/1.0/IWaydroidTask.hal
++++ b/interfaces/task/1.0/IWaydroidTask.hal
+@@ -20,4 +20,7 @@ interface IWaydroidTask {
+     removeTask(uint32_t taskID);
+     removeAllVisibleRecentTasks();
+     getAppName(string packageName) generates (string name);
++    /* Resize a task to the given bounds on the Android display, so the app
++     * lays itself out again instead of being scaled by the compositor. */
++    resizeTask(uint32_t taskID, int32_t left, int32_t top, int32_t right, int32_t bottom) generates (bool ok);
+ };
+diff --git a/interfaces/task/1.0/default/WaydroidTask.cpp b/interfaces/task/1.0/default/WaydroidTask.cpp
+index dd1d0c8..04f9921 100644
+--- a/interfaces/task/1.0/default/WaydroidTask.cpp
++++ b/interfaces/task/1.0/default/WaydroidTask.cpp
+@@ -49,6 +49,21 @@ Return<void> WaydroidTask::removeTask(uint32_t taskID) {
+     return Void();
+ }
+ 
++Return<bool> WaydroidTask::resizeTask(uint32_t taskID, int32_t left, int32_t top, int32_t right, int32_t bottom) {
++    bool ret = false;
++    if (mActivityTaskManager == nullptr) {
++        sp<IBinder> binderTask = android::defaultServiceManager()->getService(android::String16("activity_task"));
++        if (binderTask != nullptr)
++            mActivityTaskManager = android::interface_cast<IActivityTaskManager>(binderTask);
++    }
++    if (mActivityTaskManager != nullptr) {
++        /* RESIZE_MODE_SYSTEM: the bounds come from the compositor, not from a
++         * drag inside Android. */
++        mActivityTaskManager->resizeTask(taskID, left, top, right, bottom, 0, &ret);
++    }
++    return ret;
++}
++
+ Return<void> WaydroidTask::removeAllVisibleRecentTasks() {
+     if (mActivityTaskManager == nullptr) {
+         sp<IBinder> binderTask = android::defaultServiceManager()->getService(android::String16("activity_task"));
+diff --git a/interfaces/task/1.0/default/WaydroidTask.h b/interfaces/task/1.0/default/WaydroidTask.h
+index b2d3f0f..001f36e 100644
+--- a/interfaces/task/1.0/default/WaydroidTask.h
++++ b/interfaces/task/1.0/default/WaydroidTask.h
+@@ -47,6 +47,7 @@ struct WaydroidTask : public IWaydroidTask {
+     // Methods from ::vendor::waydroid::task::V1_0::IWaydroidTask follow.
+     Return<void> setFocusedTask(uint32_t taskID) override;
+     Return<void> removeTask(uint32_t taskID) override;
++    Return<bool> resizeTask(uint32_t taskID, int32_t left, int32_t top, int32_t right, int32_t bottom) override;
+     Return<void> removeAllVisibleRecentTasks() override;
+     Return<void> getAppName(const hidl_string& packageName, getAppName_cb _hidl_cb) override;
+   private:
+diff --git a/interfaces/task/1.0/default/binder-interfaces/IActivityTaskManager.cpp b/interfaces/task/1.0/default/binder-interfaces/IActivityTaskManager.cpp
+index 4f2518e..0b268c2 100644
+--- a/interfaces/task/1.0/default/binder-interfaces/IActivityTaskManager.cpp
++++ b/interfaces/task/1.0/default/binder-interfaces/IActivityTaskManager.cpp
+@@ -15,6 +15,10 @@ IMPLEMENT_META_INTERFACE(ActivityTaskManager, "android.app.IActivityTaskManager"
+   return ::android::binder::Status::fromStatusT(::android::UNKNOWN_TRANSACTION);
+ }
+ 
++::android::binder::Status IActivityTaskManagerDefault::resizeTask(int32_t, int32_t, int32_t, int32_t, int32_t, int32_t, bool*) {
++  return ::android::binder::Status::fromStatusT(::android::UNKNOWN_TRANSACTION);
++}
++
+ ::android::binder::Status IActivityTaskManagerDefault::removeTask(int32_t, bool* ) {
+   return ::android::binder::Status::fromStatusT(::android::UNKNOWN_TRANSACTION);
+ }
+@@ -67,6 +71,64 @@ BpActivityTaskManager::BpActivityTaskManager(const ::android::sp<::android::IBin
+   return _aidl_status;
+ }
+ 
++::android::binder::Status BpActivityTaskManager::resizeTask(int32_t taskId, int32_t left, int32_t top, int32_t right, int32_t bottom, int32_t resizeMode, bool* _aidl_return) {
++  ::android::Parcel _aidl_data;
++  ::android::Parcel _aidl_reply;
++  ::android::status_t _aidl_ret_status = ::android::OK;
++  ::android::binder::Status _aidl_status;
++  _aidl_ret_status = _aidl_data.writeInterfaceToken(getInterfaceDescriptor());
++  if (((_aidl_ret_status) != (::android::OK))) {
++    goto _aidl_error;
++  }
++  _aidl_ret_status = _aidl_data.writeInt32(taskId);
++  if (((_aidl_ret_status) != (::android::OK))) {
++    goto _aidl_error;
++  }
++  /* android.graphics.Rect: present marker followed by its four ints */
++  _aidl_ret_status = _aidl_data.writeInt32(1);
++  if (((_aidl_ret_status) != (::android::OK))) {
++    goto _aidl_error;
++  }
++  _aidl_ret_status = _aidl_data.writeInt32(left);
++  if (((_aidl_ret_status) != (::android::OK))) {
++    goto _aidl_error;
++  }
++  _aidl_ret_status = _aidl_data.writeInt32(top);
++  if (((_aidl_ret_status) != (::android::OK))) {
++    goto _aidl_error;
++  }
++  _aidl_ret_status = _aidl_data.writeInt32(right);
++  if (((_aidl_ret_status) != (::android::OK))) {
++    goto _aidl_error;
++  }
++  _aidl_ret_status = _aidl_data.writeInt32(bottom);
++  if (((_aidl_ret_status) != (::android::OK))) {
++    goto _aidl_error;
++  }
++  _aidl_ret_status = _aidl_data.writeInt32(resizeMode);
++  if (((_aidl_ret_status) != (::android::OK))) {
++    goto _aidl_error;
++  }
++  _aidl_ret_status = remote()->transact(::android::IBinder::FIRST_CALL_TRANSACTION + 84 /* resizeTask */, _aidl_data, &_aidl_reply);
++  if (((_aidl_ret_status) != (::android::OK))) {
++    goto _aidl_error;
++  }
++  _aidl_ret_status = _aidl_status.readFromParcel(_aidl_reply);
++  if (((_aidl_ret_status) != (::android::OK))) {
++    goto _aidl_error;
++  }
++  if (!_aidl_status.isOk()) {
++    return _aidl_status;
++  }
++  _aidl_ret_status = _aidl_reply.readBool(_aidl_return);
++  if (((_aidl_ret_status) != (::android::OK))) {
++    goto _aidl_error;
++  }
++  _aidl_error:
++  _aidl_status.setFromStatusT(_aidl_ret_status);
++  return _aidl_status;
++}
++
+ ::android::binder::Status BpActivityTaskManager::removeTask(int32_t taskId, bool* _aidl_return) {
+   ::android::Parcel _aidl_data;
+   ::android::Parcel _aidl_reply;
+diff --git a/interfaces/task/1.0/default/binder-interfaces/include/android/app/BpActivityTaskManager.h b/interfaces/task/1.0/default/binder-interfaces/include/android/app/BpActivityTaskManager.h
+index 016e6b9..d10bbd9 100644
+--- a/interfaces/task/1.0/default/binder-interfaces/include/android/app/BpActivityTaskManager.h
++++ b/interfaces/task/1.0/default/binder-interfaces/include/android/app/BpActivityTaskManager.h
+@@ -16,6 +16,7 @@ public:
+   virtual ~BpActivityTaskManager() = default;
+   ::android::binder::Status setFocusedTask(int32_t taskId) override;
+   ::android::binder::Status removeTask(int32_t taskId, bool* _aidl_return) override;
++  ::android::binder::Status resizeTask(int32_t taskId, int32_t left, int32_t top, int32_t right, int32_t bottom, int32_t resizeMode, bool* _aidl_return) override;
+   ::android::binder::Status removeAllVisibleRecentTasks() override;
+ };  // class BpActivityTaskManager
+ 
+diff --git a/interfaces/task/1.0/default/binder-interfaces/include/android/app/IActivityTaskManager.h b/interfaces/task/1.0/default/binder-interfaces/include/android/app/IActivityTaskManager.h
+index ddaac5c..c83d5aa 100644
+--- a/interfaces/task/1.0/default/binder-interfaces/include/android/app/IActivityTaskManager.h
++++ b/interfaces/task/1.0/default/binder-interfaces/include/android/app/IActivityTaskManager.h
+@@ -16,6 +16,7 @@ public:
+   DECLARE_META_INTERFACE(ActivityTaskManager)
+   virtual ::android::binder::Status setFocusedTask(int32_t taskId) = 0;
+   virtual ::android::binder::Status removeTask(int32_t taskId, bool* _aidl_return) = 0;
++  virtual ::android::binder::Status resizeTask(int32_t taskId, int32_t left, int32_t top, int32_t right, int32_t bottom, int32_t resizeMode, bool* _aidl_return) = 0;
+   virtual ::android::binder::Status removeAllVisibleRecentTasks() = 0;
+ };  // class IActivityTaskManager
+ 
+@@ -24,6 +25,7 @@ public:
+   ::android::IBinder* onAsBinder() override;
+   ::android::binder::Status setFocusedTask(int32_t taskId) override;
+   ::android::binder::Status removeTask(int32_t taskId, bool* _aidl_return) override;
++  ::android::binder::Status resizeTask(int32_t taskId, int32_t left, int32_t top, int32_t right, int32_t bottom, int32_t resizeMode, bool* _aidl_return) override;
+   ::android::binder::Status removeAllVisibleRecentTasks() override;
+ 
+ };

@@ -1,0 +1,662 @@
+diff --git a/compat_tool/images/rootfs_overlay/system/bin/cmd b/compat_tool/images/rootfs_overlay/system/bin/cmd
+index 4049992..d81bf53 100755
+--- a/compat_tool/images/rootfs_overlay/system/bin/cmd
++++ b/compat_tool/images/rootfs_overlay/system/bin/cmd
+@@ -8,6 +8,19 @@ function android_sdk_version()
+     cat /system/build.prop |grep ro.build.version.sdk= | sed "s/.*=//g"
+ }
+ 
++# Name of the per-abi directory Android creates below /data/app/<pkg>/lib/.
++# (arm64-v8a -> arm64, x86_64 -> x86_64, see NativeLibraryHelper.)
++app_abi_dir()
++{
++    case "$(getprop ro.product.cpu.abi)" in
++        arm64-v8a) echo "arm64" ;;
++        x86_64)    echo "x86_64" ;;
++        armeabi*)  echo "arm" ;;
++        x86)       echo "x86" ;;
++        *)         echo "arm64" ;;
++    esac
++}
++
+ # These helper functions unmount all vulkan layers from an app's libdir, and mount them in again
+ unmount_vulkan_layers()
+ {
+@@ -19,7 +32,7 @@ unmount_vulkan_layers()
+             APP_PATH="${APP_PATH%/base.apk}"
+ 
+             if [[ -n "${APP_PATH}" ]]; then
+-                local APP_LIB_DIR="${APP_PATH}/lib/arm64"
++                local APP_LIB_DIR="${APP_PATH}/lib/$(app_abi_dir)"
+                 for vulkan_layer in "${APP_LIB_DIR}"/libVkLayer_*.so; do
+                     PARENT_UID=0 PARENT_GID=0 umount $vulkan_layer 2>/dev/null >/dev/null || true
+                 done
+@@ -39,7 +52,7 @@ mount_vulkan_layers()
+ 
+             # Mount enabled vulkan layers
+             local LEPTON_LIB_DIR="/vendor/enabled_vulkan_layers"
+-            local APP_LIB_DIR="${APP_PATH}/lib/arm64"
++            local APP_LIB_DIR="${APP_PATH}/lib/$(app_abi_dir)"
+             for LIBPATH in $(find "${LEPTON_LIB_DIR}/" -name *.so); do
+                 local LAYER_BASENAME="$(basename "${LIBPATH}")"
+                 mkdir -p "${APP_LIB_DIR}"
+diff --git a/compat_tool/lepton b/compat_tool/lepton
+index 7ad7c19..f0e4a52 100755
+--- a/compat_tool/lepton
++++ b/compat_tool/lepton
+@@ -202,16 +202,23 @@ case "${COMMAND}" in
+                 extract_strace "$(logcat_debug_dir)"
+             fi
+ 
+-            # If the user asked for us to dump a logcat, OR we exited after less than 30 seconds
++            # If the user asked for us to dump a logcat, OR we exited after less
++            # than 30 seconds without ever showing a window.  Closing a window
++            # after a few seconds is an ordinary session on a desktop, and
++            # throwing the baked data away for it means the next start
++            # reinstalls the app -- about five seconds every time.
+             local EARLY_SHUTDOWN=0
+-            if (( "$(date "+%s")" < "${app_start_time} + 30" )); then
++            if (( "$(date "+%s")" < "${app_start_time} + 30" )) && [[ ! -f "$(saw_window_path)" ]]; then
+                 EARLY_SHUTDOWN=1
+             fi
+             if [[ -n "${LEPTON_DUMP_LOGCAT:-}" ]] || [[ "${EARLY_SHUTDOWN}" == "1" ]]; then
+                 println "Dumping logcat to $(logcat_debug_dir)"
+                 dump_logcat "$(logcat_debug_dir)"
+ 
+-                if [[ "${EARLY_SHUTDOWN}" == "1" ]]; then
++                # An install-only run is short on purpose; this guard is meant
++                # for apps that crash right after being started.
++                if [[ "${EARLY_SHUTDOWN}" == "1" ]] &&
++                   [[ "${LEPTON_INSTALL_ONLY:-false}" != "true" ]]; then
+                     # Clearing baked app data in this case since something might be wrong.
+                     clear_baked_app_data "early exit"
+                 fi
+@@ -256,7 +263,14 @@ case "${COMMAND}" in
+                 update_baked_app_metadata
+                 # If the app is not baked yet, the container will wait for a
+                 # property.
+-                continue_boot_after_bake
++                if [[ "${LEPTON_INSTALL_ONLY:-false}" == "true" ]]; then
++                    # Install and stop, the way Steam installs a game: the next
++                    # start boots with the app already baked in.
++                    println "App installed; stopping the container (LEPTON_INSTALL_ONLY)."
++                    LEPTON_SKIP_APP_WAIT=true
++                else
++                    continue_boot_after_bake
++                fi
+             fi
+         fi
+ 
+@@ -267,7 +281,9 @@ case "${COMMAND}" in
+             start_traced_probes
+         fi
+ 
+-        wait_for_container
++        if [[ "${LEPTON_SKIP_APP_WAIT:-false}" != "true" ]]; then
++            wait_for_container
++        fi
+         teardown
+         ;;
+     sysbake)
+diff --git a/compat_tool/liblepton/apk_extractor/Makefile b/compat_tool/liblepton/apk_extractor/Makefile
+index ac5eedf..a1d7556 100644
+--- a/compat_tool/liblepton/apk_extractor/Makefile
++++ b/compat_tool/liblepton/apk_extractor/Makefile
+@@ -22,10 +22,23 @@ test-verbose: $(NATIVE_PATH)
+ benchmark: $(NATIVE_PATH)
+ 	hyperfine '$(NATIVE_PATH) --print-app-id test/WalkaboutMiniGolf.xml'
+ 
+-TARGET_PATH=target/aarch64-unknown-linux-gnu/release/apk-info-extractor
++# The extractor runs on the host that runs `lepton`, so it is built for the
++# host architecture unless a cross target is requested explicitly.
++# LEPTON_TARGET_ARCH=aarch64 reproduces the original Steam Frame cross build.
++LEPTON_TARGET_ARCH ?= $(shell uname -m)
++
++ifeq ($(LEPTON_TARGET_ARCH),aarch64)
++CARGO_TRIPLE := aarch64-unknown-linux-gnu
++CARGO_LINKER_ENV := CARGO_TARGET_AARCH64_UNKNOWN_LINUX_GNU_LINKER=aarch64-linux-gnu-gcc
++else
++CARGO_TRIPLE := x86_64-unknown-linux-gnu
++CARGO_LINKER_ENV :=
++endif
++
++TARGET_PATH=target/$(CARGO_TRIPLE)/release/apk-info-extractor
+ $(TARGET_PATH): $(SRCS)
+-	@CARGO_TARGET_AARCH64_UNKNOWN_LINUX_GNU_LINKER=aarch64-linux-gnu-gcc \
+-	cargo build --target=aarch64-unknown-linux-gnu --profile=release
++	@$(CARGO_LINKER_ENV) \
++	cargo build --target=$(CARGO_TRIPLE) --profile=release
+ 
+ bin:
+ 	mkdir -p $@
+diff --git a/compat_tool/liblepton/app_metadata.sh b/compat_tool/liblepton/app_metadata.sh
+index 741d336..960712d 100755
+--- a/compat_tool/liblepton/app_metadata.sh
++++ b/compat_tool/liblepton/app_metadata.sh
+@@ -159,6 +159,19 @@ function app_wants_flatscreen()
+         APP_WANTS_FLATSCREEN="true"
+     fi
+ 
++    # An install-only run shows nothing: it installs the app and exits.
++    if [[ "${LEPTON_INSTALL_ONLY:-false}" == "true" ]]; then
++        return 1
++    fi
++
++    # Explicit request from the environment.  Needed for plain APKs outside
++    # Steam: they count as `is_app`, and the per-app marker file lives in the
++    # Steam install dir, which does not exist then -- so without this they
++    # would always run headless, i.e. invisibly, on a desktop without VR.
++    if [[ "${LEPTON_SHOW_FLATSCREEN:-false}" == "true" ]]; then
++        APP_WANTS_FLATSCREEN="true"
++    fi
++
+     # Allow certain dev workloads (such as `gfxreconstruct`) to explicitly request
+     # headless operation through their context name, and make that override any
+     # other logic we've got above, except for `APP_FLATSCREEN_FILE`.
+diff --git a/compat_tool/liblepton/debug.sh b/compat_tool/liblepton/debug.sh
+index 09dc423..e897f29 100755
+--- a/compat_tool/liblepton/debug.sh
++++ b/compat_tool/liblepton/debug.sh
+@@ -10,7 +10,7 @@ function collect_debug_logs()
+     local LEPTON_COMPAT_VERSION="$(pacman -Q | grep -E lepton-compat)"
+     local STEAMOS_VERSION=$(source /etc/os-release; echo $BUILD_ID)
+     local STEAMVR_VERSION="$(pacman -Q | grep -E 'deckard-steamvr-(main|rel)')"
+-    local STEAM_VERSION="$(cat ${HOME}/.steam/steam/package/steam_client_$(cat ${HOME}/.steam/steam/package/beta)_linuxarm64.manifest | grep version | awk '{ print $2 }' | xargs)"
++    local STEAM_VERSION="$(cat ${HOME}/.steam/steam/package/steam_client_$(cat ${HOME}/.steam/steam/package/beta)_$(case "$(lepton_arch)" in aarch64) echo linuxarm64;; *) echo ubuntu12;; esac).manifest | grep version | awk '{ print $2 }' | xargs)"
+     local LEPTON_VERSION="$(lepton_version)"
+     local LEPTON_ROOTFS_VERSION="$(lepton_rootfs_version)"
+ 
+diff --git a/compat_tool/liblepton/lepton.seccomp.json b/compat_tool/liblepton/lepton.seccomp.json
+index e598fff..06f70d4 100644
+--- a/compat_tool/liblepton/lepton.seccomp.json
++++ b/compat_tool/liblepton/lepton.seccomp.json
+@@ -3,11 +3,20 @@
+   "archMap": [
+     {
+       "architecture": "SCMP_ARCH_AARCH64"
++    },
++    {
++      "architecture": "SCMP_ARCH_X86_64",
++      "subArchitectures": [
++        "SCMP_ARCH_X86",
++        "SCMP_ARCH_X32"
++      ]
+     }
+   ],
+   "syscalls": [
+     {
+-      "names": ["open_by_handle_at"],
++      "names": [
++        "open_by_handle_at"
++      ],
+       "action": "SCMP_ACT_ERRNO",
+       "errnoRet": 38
+     },
+diff --git a/compat_tool/liblepton/liblepton.sh b/compat_tool/liblepton/liblepton.sh
+index cb479c9..8c959c0 100755
+--- a/compat_tool/liblepton/liblepton.sh
++++ b/compat_tool/liblepton/liblepton.sh
+@@ -14,7 +14,12 @@ STEAMAPPS_PATH="${STEAM_PATH}/steamapps"
+ 
+ APK_AUTO_INSTALL_DIR="${HOME}/lepton_auto_install_apks"
+ 
++# SteamOS ships adb at the Arch path; fall back to whatever is in PATH
++# (Fedora/Debian install it as /usr/bin/adb via android-tools).
+ ADB="/usr/lib/android-sdk/platform-tools/adb"
++if [[ ! -x "${ADB}" ]]; then
++    ADB="$(command -v adb || true)"
++fi
+ 
+ # Include our libraries of functionality
+ source "${LEPTON_DIR}/utils.sh"
+@@ -91,9 +96,11 @@ function clear_baked_app_data()
+ function remove_prefix()
+ {
+     if [[ -n "${LEPTON_PREFIX:-}" ]]; then
+-        prepare_baked_data_for_removal
+-
+-        # clear the whole prefix
++        # NOTE: upstream also calls prepare_baked_data_for_removal() here.  That
++        # deletes the baked /data overlay -- the very thing is_app_baked() looks
++        # for -- on every teardown, so the app is reinstalled on every single
++        # start.  The prefix is its own temp directory; clear_baked_app_data()
++        # still prepares the baked dirs when they really are meant to go.
+         rm -rf "${LEPTON_PREFIX}"
+     fi
+ }
+@@ -141,7 +148,15 @@ function setup_container()
+ 
+     setup_mounts
+ 
++    # SteamOS runs apps under gamescope, whose socket is gamescope-0.  On a
++    # regular desktop session (KDE, GNOME, ...) there is no gamescope; fall back
++    # to the session's own compositor instead of failing to mount the socket.
++    local HOST_WAYLAND_DISPLAY="${WAYLAND_DISPLAY:-}"
+     export WAYLAND_DISPLAY="${GAMESCOPE_WAYLAND_DISPLAY:-gamescope-0}"
++    if [[ ! -e "${XDG_RUNTIME_DIR}/${WAYLAND_DISPLAY}" && -n "${HOST_WAYLAND_DISPLAY}" \
++          && -e "${XDG_RUNTIME_DIR}/${HOST_WAYLAND_DISPLAY}" ]]; then
++        export WAYLAND_DISPLAY="${HOST_WAYLAND_DISPLAY}"
++    fi
+     export PULSE_RUNTIME_PATH="$XDG_RUNTIME_DIR/pulse"
+ 
+     # Workaround for users who are stuck on older OS versions; drop this
+@@ -171,6 +186,13 @@ function onexit_path()
+     print "$(data_mount_path)/lepton-on-app-exit"
+ }
+ 
++# Marks that the app actually had a window on screen.  Tells a session the user
++# ended from an app that died on startup.
++function saw_window_path()
++{
++    print "$(data_mount_path)/lepton-saw-window"
++}
++
+ function start_container()
+ {
+     local CONTEXT="${1:-${LEPTON_CONTEXT}}"
+@@ -332,6 +354,44 @@ function wait_for_container()
+         println "Waiting for ${CONTEXT} to exit..."
+     fi
+ 
++    local WAIT_WINDOW_PID=""
++    if is_app && [[ "${LEPTON_APP_ONLY:-false}" == "true" ]]; then
++        # In app-only mode the app owns the only window on the desktop.
++        # Closing it ends the Android task, but Android keeps the process
++        # cached, so the process observer never reports an exit and we would
++        # wait forever.  "Had a window, has none" is the app being closed.
++        (
++            uninherit_lepton_lock
++
++            SAW_WINDOW=false
++
++            GONE=0
++            while true; do
++                WINDOWS="$(podman_attach --no-term sh -c 'getprop waydroid.open_windows' 2>/dev/null | tr -cd '0-9')"
++                if [[ -n "${WINDOWS}" ]]; then
++                    if (( WINDOWS > 0 )); then
++                        if [[ "${SAW_WINDOW}" != "true" ]]; then
++                            touch "$(saw_window_path)" 2>/dev/null || true
++                        fi
++                        SAW_WINDOW=true
++                        GONE=0
++                    elif [[ "${SAW_WINDOW}" == "true" ]]; then
++                        # The window can disappear for a moment while Android
++                        # rebuilds it, for instance when it is resized, so only
++                        # a window that stays gone means the app is done.
++                        GONE=$((GONE + 1))
++                        if (( GONE >= 3 )); then
++                            touch "$(onexit_path)"
++                            break
++                        fi
++                    fi
++                fi
++                sleep 2
++            done
++        ) &
++        WAIT_WINDOW_PID="$!"
++    fi
++
+     # NOTE: We intentionally do this `background-then-wait` pattern to ensure that SIGINT still works.
+     (
+         uninherit_lepton_lock
+@@ -345,6 +405,10 @@ function wait_for_container()
+         wait "${WAIT_FILE_PID}" 2>/dev/null >/dev/null
+ 
+         pkill -P "${WAIT_PID}" 2>/dev/null || true
++        if [[ -n "${WAIT_WINDOW_PID}" ]]; then
++            pkill -P "${WAIT_WINDOW_PID}" 2>/dev/null || true
++            kill "${WAIT_WINDOW_PID}" 2>/dev/null || true
++        fi
+     else
+         wait "${WAIT_PID}" 2>/dev/null >/dev/null
+     fi
+@@ -492,7 +556,18 @@ function install_app()
+         local TEMP_PORT=$((ADB_PORT - 500))
+         # Kill first to remove old connections
+         "$ADB" -P "${TEMP_PORT}" kill-server 2>/dev/null
+-        "$ADB" -P "${TEMP_PORT}" connect localhost:"${ADB_PORT}" >/dev/null 2>/dev/null
++        # adbd starts listening shortly after boot completes, and pasta's
++        # `-t auto` forwarding only picks the port up on its next scan, so a
++        # single connect right after boot can lose that race (it does with a
++        # fast, baked boot).  Retry until the device reports as `device`.
++        local ADB_TRIES
++        for ADB_TRIES in $(seq 1 30); do
++            "$ADB" -P "${TEMP_PORT}" connect localhost:"${ADB_PORT}" >/dev/null 2>/dev/null || true
++            if [[ "$("$ADB" -P "${TEMP_PORT}" -s localhost:"${ADB_PORT}" get-state 2>/dev/null)" == "device" ]]; then
++                break
++            fi
++            sleep 1
++        done
+         if ! is_steamlaunch; then
+             if [[ -f "${APP_ID_FILE}" ]]; then
+                 "$ADB" -P "${TEMP_PORT}" -s localhost:"${ADB_PORT}" push "${APP_ID_FILE}" /data/steam_app
+@@ -634,6 +709,10 @@ function list_android_games()
+ {
+     STEAMAPPS_PATH="${HOME}/.local/share/Steam/steamapps"
+     for GAME in ${STEAMAPPS_PATH}/appmanifest_*.acf; do
++        # No Steam on this machine: the pattern stays unexpanded and the body
++        # would run grep on a file that does not exist, whose failure trips the
++        # ERR trap and tears the container down.
++        [[ -e "${GAME}" ]] || continue
+         INSTALLDIR="$(grep installdir ${GAME} | cut -d'"' -f4)"
+         if compgen -G "${STEAMAPPS_PATH}/common/${INSTALLDIR}/*.apk" >/dev/null; then
+             println "\"$(grep name ${GAME} | cut -d'"' -f4)\""
+@@ -645,6 +724,10 @@ function list_live_android_games()
+ {
+     STEAMAPPS_PATH="${HOME}/.local/share/Steam/steamapps"
+     for GAME in ${STEAMAPPS_PATH}/appmanifest_*.acf; do
++        # No Steam on this machine: the pattern stays unexpanded and the body
++        # would run grep on a file that does not exist, whose failure trips the
++        # ERR trap and tears the container down.
++        [[ -e "${GAME}" ]] || continue
+         GAMENAME="$(grep name ${GAME} | cut -d'"' -f4)"
+         if [[ "${GAMENAME}" == "${1:-}"* ]]; then
+             INSTALLDIR="$(grep installdir ${GAME} | cut -d'"' -f4)"
+@@ -680,6 +763,10 @@ function is_context_live()
+ 
+     if ! is_steamlaunch "${CONTEXT}"; then
+         for GAME in ${STEAMAPPS_PATH}/appmanifest_*.acf; do
++            # No Steam on this machine: the pattern stays unexpanded and the body
++            # would run grep on a file that does not exist, whose failure trips the
++            # ERR trap and tears the container down.
++            [[ -e "${GAME}" ]] || continue
+             if [[ "$(grep name ${GAME} | cut -d'"' -f4)" == "${CONTEXT}" ]]; then
+                 STEAMLAUNCH_CONTEXT="steamlaunch-$(grep appid ${GAME} | cut -d'"' -f4)"
+                 local STATE="$(podman inspect -f '{{ .State.Status }}' "lepton-${STEAMLAUNCH_CONTEXT}" 2>/dev/null || true)"
+@@ -824,6 +911,10 @@ function determine_app()
+         # Might be the name of a game, let's see.
+         # This might be slow when there's a ton of games, but it's kind of a debug option anyways.
+         for GAME in ${STEAMAPPS_PATH}/appmanifest_*.acf; do
++            # No Steam on this machine: the pattern stays unexpanded and the body
++            # would run grep on a file that does not exist, whose failure trips the
++            # ERR trap and tears the container down.
++            [[ -e "${GAME}" ]] || continue
+             if [[ "$(grep name ${GAME} | cut -d'"' -f4)" == "${LEPTON_CONTEXT}" ]]; then
+                 export SteamAppId="$(grep appid ${GAME} | cut -d'"' -f4)"
+                 export STEAM_COMPAT_INSTALL_PATH="${STEAMAPPS_PATH}/common/$(grep installdir ${GAME} | cut -d'"' -f4)"
+diff --git a/compat_tool/liblepton/mounting.sh b/compat_tool/liblepton/mounting.sh
+index 372a3f1..cae3a5d 100755
+--- a/compat_tool/liblepton/mounting.sh
++++ b/compat_tool/liblepton/mounting.sh
+@@ -80,6 +80,9 @@ function setup_mounts()
+     GUESTOS_OVERLAY="/usr/share/guestos/android"
+ 
+     for OVERLAY in ${LEPTON_OVERLAY} ${GUESTOS_OVERLAY}; do
++        # GUESTOS_OVERLAY is provided by SteamOS packages (Android-built mesa,
++        # vulkan layers, ...); on other hosts it simply does not exist.
++        [[ -d "${OVERLAY}" ]] || continue
+         pushd "${OVERLAY}" >/dev/null
+         while IFS= read -r -d '' file; do
+             DST="${file#./}"
+@@ -211,6 +214,14 @@ function setup_podman_base()
+ 
+     # capabilities
+     podman_cmdline --cap-drop ALL
++    # Android mounts its own binderfs inside the container and the device nodes
++    # it creates there are not in podman's device list.  Rootless podman cannot
++    # use the device cgroup at all, so this only bites when running as root --
++    # and then every binder open fails with EPERM and SurfaceFlinger aborts.
++    if [[ "${EUID}" -eq 0 ]]; then
++        podman_cmdline --device-cgroup-rule "c *:* rwm"
++    fi
++
+     podman_cmdline --cap-add audit_control
+     podman_cmdline --cap-add sys_nice
+     podman_cmdline --cap-add wake_alarm
+@@ -241,6 +252,14 @@ function setup_podman_base()
+ 
+     # seccomp
+     podman_cmdline --security-opt seccomp=${LEPTON_DIR}/lepton.seccomp.json
++
++    # On SELinux hosts (Fedora and friends) the container would be denied the
++    # host files bind-mounted below -- the Wayland and PulseAudio sockets in
++    # $XDG_RUNTIME_DIR, the per-launch prefix under /tmp, Steam paths.  Sockets
++    # and shared host directories cannot sensibly be relabelled with :z, so
++    # disable label separation for this container, as toolbox and distrobox
++    # do.  No effect on hosts without SELinux (SteamOS).
++    podman_cmdline --security-opt label=disable
+ }
+ 
+ function podman_extract_rootfs_file()
+@@ -468,9 +487,11 @@ function setup_podman_mounts()
+ 
+     # On gitlab we run via swiftshader.
+     if [[ "${LEPTON_FORCE_SOFTWARE:-}" != "true" ]]; then
+-        for dev in renderD128 card0; do
+-            if [[ -e "/dev/dri/${dev}" ]]; then
+-                podman_mount_entry "/dev/dri/${dev}" "/dev/dri/${dev}" rw
++        # Not a fixed list: the primary node is card0 only on a machine with a
++        # single GPU, and on this laptop it is card1.
++        for dev in /dev/dri/renderD* /dev/dri/card*; do
++            if [[ -e "${dev}" ]]; then
++                podman_mount_entry "${dev}" "${dev}" rw
+             fi
+         done
+ 
+@@ -510,7 +531,7 @@ function setup_podman_mounts()
+     touch "${DATA_OVERLAY}/misc/ethernet/ipconfig.txt"
+     podman_mount_entry "$(prefix)/ipconfig.txt" "/data/misc/ethernet/ipconfig.txt" rw
+ 
+-    if ! is_sysbake; then
++    if ! is_sysbake && have_steamvr; then
+         mkdir -p "${DATA_OVERLAY}/steamvr/runtime"
+         # Add our steamvr build into `/data/steamvr/runtime` and `/data/steamvr/config`
+         podman_mount_entry "$(steamvr path)" "/data/steamvr/runtime" rw
+@@ -541,11 +562,12 @@ function setup_podman_mounts()
+     # Mount steamclient.so directory.  Note that we have to add `libsteamclient` and friends
+     # to `/system/etc/public.libraries.txt` so that it's all loadable.
+     podman_extract_rootfs_file "/system/etc/public.libraries.txt" "${PREFIX}/mounts/public.libraries.txt"
+-    if [[ -f "${STEAM_COMPAT_CLIENT_INSTALL_PATH:-}/androidarm64/libsteamclient.so" ]]; then
+-        for LIBNAME in "${STEAM_COMPAT_CLIENT_INSTALL_PATH}/androidarm64/"*.so; do
++    local STEAM_ANDROID_LIBDIR="$(lepton_steam_android_libdir)"
++    if [[ -f "${STEAM_COMPAT_CLIENT_INSTALL_PATH:-}/${STEAM_ANDROID_LIBDIR}/libsteamclient.so" ]]; then
++        for LIBNAME in "${STEAM_COMPAT_CLIENT_INSTALL_PATH}/${STEAM_ANDROID_LIBDIR}/"*.so; do
+             LIBNAME="$(lepton_basename "${LIBNAME}")"
+             println "${LIBNAME} nopreload" >>"${PREFIX}/mounts/public.libraries.txt"
+-            podman_mount_entry "${STEAM_COMPAT_CLIENT_INSTALL_PATH}/androidarm64/${LIBNAME}" "/system/lib64/${LIBNAME}" ro,U
++            podman_mount_entry "${STEAM_COMPAT_CLIENT_INSTALL_PATH}/${STEAM_ANDROID_LIBDIR}/${LIBNAME}" "/system/lib64/${LIBNAME}" ro,U
+         done
+     fi
+     podman_mount_entry "${PREFIX}/mounts/public.libraries.txt" "/system/etc/public.libraries.txt" ro,U
+@@ -578,6 +600,11 @@ function setup_podman_mounts()
+         fi
+         disable_minigbm
+         disable_qti_display
++    elif [[ "$(lepton_arch)" == "x86_64" ]]; then
++        # Neither the Qualcomm display HAL nor the minigbm_msm allocator exist
++        # on this hardware; ro.hardware.gralloc=gbm is used instead.
++        disable_minigbm
++        disable_qti_display
+     else
+         if [[ "${LEPTON_USE_QCOM_DRIVER:-false}" == "true" ]]; then
+             disable_minigbm
+diff --git a/compat_tool/liblepton/properties.sh b/compat_tool/liblepton/properties.sh
+index abc2e90..025afa9 100755
+--- a/compat_tool/liblepton/properties.sh
++++ b/compat_tool/liblepton/properties.sh
+@@ -62,7 +62,14 @@ function setup_props()
+         props_echo "ro.hardware.vulkan=pastel"
+     else
+         # Default to using turnip as our driver, but allow using the qcom driver
+-        if [[ "${LEPTON_USE_QCOM_DRIVER:-false}" == "true" ]]; then
++        if [[ "$(lepton_arch)" == "x86_64" ]]; then
++            # No Adreno and no minigbm_msm here: RADV is built into the image
++            # (BOARD_MESA3D_VULKAN_DRIVERS := amd) and the generic gbm gralloc
++            # from hardware/waydroid handles buffer allocation.
++            props_echo "ro.hardware.egl=mesa"
++            props_echo "ro.hardware.vulkan=radeon"
++            props_echo "ro.hardware.gralloc=gbm"
++        elif [[ "${LEPTON_USE_QCOM_DRIVER:-false}" == "true" ]]; then
+             props_echo "ro.hardware.egl=angle"
+             props_echo "ro.hardware.vulkan=adreno"
+             props_echo "ro.hardware.gralloc=qti-display"
+@@ -73,8 +80,15 @@ function setup_props()
+             props_echo "ro.hardware.gralloc=minigbm_msm"
+         fi
+ 
+-        # Zink + disable kopper to work with mesa
+-        props_echo "mesa.loader.driver.override=zink"
++        # Zink + disable kopper to work with mesa.  On x86_64 the image carries a
++        # native gallium driver (radeonsi), so GL does not have to take the
++        # detour through Vulkan: zink could not match a physical device there
++        # and every EGL init failed, taking SurfaceFlinger with it.
++        if [[ "$(lepton_arch)" == "x86_64" ]]; then
++            props_echo "mesa.loader.driver.override=${LEPTON_MESA_DRIVER:-radeonsi}"
++        else
++            props_echo "mesa.loader.driver.override=zink"
++        fi
+         props_echo "mesa.libgl.kopper.disable=true"
+ 
+         # Tell Fossilize to write out shaders to this directory
+@@ -130,8 +144,36 @@ function setup_props()
+     # Only show the 2d screen if we're not baking and our app requests it.
+     if ! is_sysbake && app_wants_flatscreen; then
+         props_echo "waydroid.wayland_display=wayland-0"
+-        props_echo "waydroid.background_start=false"
+         props_echo "lepton.headless=false"
++
++        # Show just the app on the desktop, without Android's status bar,
++        # navigation bar or home screen.  In the waydroid hwcomposer that takes:
++        #  - multi-window mode: it composes the layers itself and can drop the
++        #    system bars (read once at startup),
++        #  - background_start=true: otherwise it opens a window with the whole
++        #    Android UI at startup and forces active_apps back to "Waydroid",
++        #  - active_apps: which app's windows go to the desktop,
++        #  - crop_app_windows: size each app window to its task (opaque, with
++        #    a compositor title bar) instead of a transparent overlay covering
++        #    the whole screen, so it can be moved like any other window.
++        # Opt-in via LEPTON_APP_ONLY=true (the Steam bundle turns it on).
++        if is_app && [[ "${LEPTON_APP_ONLY:-false}" == "true" ]]; then
++            props_echo "waydroid.background_start=true"
++            #  - multi_windows=false: single-window mode.  Multi-window runs the
++            #    app in an Android freeform window, which brings its own frame,
++            #    resize handles and caption inside our window -- two nested
++            #    windows.  Single-window mode shows the one task, full screen
++            #    inside Android, in one desktop window.
++            props_echo "persist.waydroid.multi_windows=${LEPTON_MULTI_WINDOWS:-true}"
++            props_echo "waydroid.active_apps=$(get_app_id)"
++            props_echo "waydroid.crop_app_windows=${LEPTON_CROP_APP_WINDOWS:-true}"
++            #  - window_decoration=false: the compositor draws the title bar,
++            #    so Android's own caption would be a second one on top of it.
++            props_echo "persist.waydroid.window_decoration=${LEPTON_ANDROID_CAPTION:-false}"
++
++        else
++            props_echo "waydroid.background_start=false"
++        fi
+     else
+         props_echo "lepton.headless=true"
+     fi
+diff --git a/compat_tool/liblepton/utils.sh b/compat_tool/liblepton/utils.sh
+index 1b4ce71..7b2f22a 100755
+--- a/compat_tool/liblepton/utils.sh
++++ b/compat_tool/liblepton/utils.sh
+@@ -16,6 +16,33 @@ function die()
+     exit 1
+ }
+ 
++# Lepton was written for the Steam Frame (arm64) only.  These helpers keep the
++# architecture-dependent bits in one place so the same tool works on x86_64.
++function lepton_arch()
++{
++    print "$(uname -m)"
++}
++
++# Android's per-abi library directory inside /data/app/<pkg>/lib/<abi>
++function lepton_app_abi_dir()
++{
++    case "$(lepton_arch)" in
++        aarch64) print "arm64" ;;
++        x86_64)  print "x86_64" ;;
++        *)       print "arm64" ;;
++    esac
++}
++
++# Suffix Steam uses for its android client libraries
++function lepton_steam_android_libdir()
++{
++    case "$(lepton_arch)" in
++        aarch64) print "androidarm64" ;;
++        x86_64)  print "androidx86_64" ;;
++        *)       print "androidarm64" ;;
++    esac
++}
++
+ function container_pid()
+ {
+     print "$(podman inspect -f '{{.State.Pid}}' "lepton-${LEPTON_CONTEXT}" 2>/dev/null || true)"
+@@ -59,6 +86,11 @@ function wait_for_file()
+     local FILE="$(lepton_basename "${1}")"
+     local DIR="$(dirname "${1}")"
+     local ALLOW_PREEXIST="${2:-}"
++    # inotifywait runs with its output discarded below, so if it is missing
++    # the watcher exits at once and this function returns as though the file
++    # had appeared: boot, bake and app-exit waits all silently stop waiting.
++    # SteamOS ships inotify-tools; other hosts may not.
++    command -v inotifywait >/dev/null || die "inotifywait not found (install inotify-tools)"
+     mkdir -p "${DIR}"
+     (
+         uninherit_lepton_lock
+@@ -82,7 +114,25 @@ function wait_for_container_file()
+     fi
+ }
+ 
+-STEAMVR_LOGS_DIR="$(steamvr logpath || true)"
++# `steamvr` is the SteamOS helper from the deckard-steamvr package; it only
++# exists on a Steam Frame / SteamOS install.  Elsewhere Lepton can still run
++# flatscreen apps, so treat a missing helper as "no VR runtime" instead of
++# failing the launch.
++function have_steamvr()
++{
++    command -v steamvr >/dev/null
++}
++
++STEAMVR_LOGS_DIR=""
++if have_steamvr; then
++    STEAMVR_LOGS_DIR="$(steamvr logpath || true)"
++fi
++# Lepton writes its own launch logs and logcat dumps next to SteamVR's.  Without
++# SteamVR that directory would be empty and the logs would go to "/" and fail.
++if [[ -z "${STEAMVR_LOGS_DIR}" ]]; then
++    STEAMVR_LOGS_DIR="${HOME}/.local/share/lepton/logs"
++    mkdir -p "${STEAMVR_LOGS_DIR}"
++fi
+ 
+ function lepton_version()
+ {
+diff --git a/compat_tool/liblepton/vulkan_layers.sh b/compat_tool/liblepton/vulkan_layers.sh
+index 8d20583..e7402d0 100755
+--- a/compat_tool/liblepton/vulkan_layers.sh
++++ b/compat_tool/liblepton/vulkan_layers.sh
+@@ -7,7 +7,7 @@
+ #
+ #  - /data/local/debug/vulkan
+ #  - /{vendor,system}/lib64
+-#  - /data/app/xyz/foo-xyz/lib/arm64
++#  - /data/app/xyz/foo-xyz/lib/<abi>
+ #
+ # The implicit layers are loaded from APKs pointed to by the settings, which you set up via commands
+ # such as the folloing:
+@@ -30,7 +30,7 @@ RPO_LAYER_NAME="libVkLayer_VALVE_rpo.so"
+ FDM_INJECTION_LAYER_NAME="libVkLayer_VALVE_fdm_injection.so"
+ FOSSILIZE_LAYER_NAME="libVkLayer_fossilize.so"
+ 
+-RENDERDOC_APP_ID="org.renderdoc.renderdoccmd.arm64"
++RENDERDOC_APP_ID="org.renderdoc.renderdoccmd.$(lepton_app_abi_dir)"
+ RENDERDOC_LAYER_NAME="libVkLayer_GLES_RenderDoc.so"
+ 
+ # This layer doesn't have a json, so we special case it
+@@ -177,8 +177,12 @@ function enable_vulkan_layers()
+         unset ENABLE_VULKAN_FDM_INJECTION_LAYER
+     fi
+ 
+-    # Fossilize goes after any other normal layers
+-    enable_vulkan_layer "${FOSSILIZE_LAYER_NAME}"
++    # Fossilize goes after any other normal layers.  It records pipelines for
++    # Steam's shader cache and ships in SteamOS' Android layer package under
++    # /usr/share/guestos; hosts without that package run fine without it.
++    if ! enable_vulkan_layer "${FOSSILIZE_LAYER_NAME}"; then
++        println " -> Continuing without fossilize (no Steam shader pipeline capture)"
++    fi
+ 
+     # If you want to debug the app + layers, vulkan validation layers inserted here makes sense
+     if [[ "${ENABLE_VULKAN_VALIDATION_LAYER_LATE:-0}" != "0" ]]; then

@@ -7,3 +7,11 @@ compat_tool/images/sysbake
 *.zip
 compat_tool/liblepton/apk_extractor/bin/apk-info-extractor
 compat_tool.tar.zst
+
+# x86_64 port (.x86_scripts)
+install-x86_64
+lepton-x86_64-*.tar.zst
+.x86_scripts/.ndk-translation
+.x86_scripts/containers.conf
+.x86_scripts/selinux/*.mod
+.x86_scripts/selinux/*.pp

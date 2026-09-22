@@ -1,0 +1,5 @@
+# Copy to .x86_scripts/containers.conf on hosts whose default podman bridge has
+# no outbound connectivity (the builder needs apt and git).  The scripts pick
+# the file up automatically and it only applies to them.
+[network]
+default_rootless_network_cmd = "host"
