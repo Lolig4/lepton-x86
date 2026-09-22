@@ -1,0 +1,168 @@
+diff --git a/AndroidProducts.mk b/AndroidProducts.mk
+index a03577d..f9fb6f3 100644
+--- a/AndroidProducts.mk
++++ b/AndroidProducts.mk
+@@ -25,6 +25,7 @@ PRODUCT_MAKEFILES := \
+     $(VENDOR_NAME)_waydroid_arm64:$(LOCAL_DIR)/waydroid_arm64/$(VENDOR_NAME)_waydroid_arm64.mk \
+     $(VENDOR_NAME)_waydroid_arm64_only:$(LOCAL_DIR)/waydroid_arm64_only/$(VENDOR_NAME)_waydroid_arm64_only.mk \
+     $(VENDOR_NAME)_lepton_arm64_only:$(LOCAL_DIR)/lepton_arm64_only/$(VENDOR_NAME)_lepton_arm64_only.mk \
++    $(VENDOR_NAME)_lepton_x86_64_only:$(LOCAL_DIR)/lepton_x86_64_only/$(VENDOR_NAME)_lepton_x86_64_only.mk \
+     $(VENDOR_NAME)_waydroid_arm:$(LOCAL_DIR)/waydroid_arm/$(VENDOR_NAME)_waydroid_arm.mk \
+     $(VENDOR_NAME)_waydroid_x86:$(LOCAL_DIR)/waydroid_x86/$(VENDOR_NAME)_waydroid_x86.mk \
+     $(VENDOR_NAME)_waydroid_x86_64:$(LOCAL_DIR)/waydroid_x86_64/$(VENDOR_NAME)_waydroid_x86_64.mk
+@@ -39,6 +40,9 @@ COMMON_LUNCH_CHOICES := \
+     $(VENDOR_NAME)_lepton_arm64_only-user \
+     $(VENDOR_NAME)_lepton_arm64_only-userdebug \
+     $(VENDOR_NAME)_lepton_arm64_only-eng \
++    $(VENDOR_NAME)_lepton_x86_64_only-user \
++    $(VENDOR_NAME)_lepton_x86_64_only-userdebug \
++    $(VENDOR_NAME)_lepton_x86_64_only-eng \
+     $(VENDOR_NAME)_waydroid_arm-user \
+     $(VENDOR_NAME)_waydroid_arm-userdebug \
+     $(VENDOR_NAME)_waydroid_arm-eng \
+diff --git a/device.mk b/device.mk
+index 0f0cfd4..32e0bfa 100644
+--- a/device.mk
++++ b/device.mk
+@@ -57,9 +57,13 @@ PRODUCT_PACKAGES += \
+     camera.v4l2
+ 
+ # Display
+-PRODUCT_SOONG_NAMESPACES += vendor/qcom/opensource/commonsys-intf/display \
+-    hardware/qcom-caf/sm8150 \
+-    hardware/waydroid/hwcomposer
++#
++# LEPTON_IS_X86_64 is evaluated from TARGET_PRODUCT because BoardConfig.mk (and
++# therefore TARGET_ARCH) is only read after the product configuration.  Same
++# trick upstream Waydroid uses for its x86 targets.
++LEPTON_IS_X86_64 := $(filter %_lepton_x86_64_only,$(TARGET_PRODUCT))
++
++PRODUCT_SOONG_NAMESPACES += hardware/waydroid/hwcomposer
+ 
+ PRODUCT_PACKAGES += \
+     android.hardware.graphics.allocator@2.0-impl \
+@@ -70,7 +74,16 @@ PRODUCT_PACKAGES += \
+     android.hardware.graphics.mapper@3.0 \
+     android.hardware.graphics.mapper@4.0 \
+     vendor.waydroid.task@1.0-service \
+-    hwcomposer.waydroid \
++    hwcomposer.waydroid
++
++# The Qualcomm display HAL and the msm minigbm backend only exist for the
++# Steam Frame's Adreno GPU; they do not build for x86_64 and nothing would
++# load them there (properties.sh selects ro.hardware.gralloc=gbm instead).
++ifeq ($(LEPTON_IS_X86_64),)
++PRODUCT_SOONG_NAMESPACES += vendor/qcom/opensource/commonsys-intf/display \
++    hardware/qcom-caf/sm8150
++
++PRODUCT_PACKAGES += \
+     libqdMetaData.vendor \
+     libgralloc.qti.vendor \
+     android.hardware.graphics.mapper@3.0-impl-qti-display \
+@@ -81,16 +94,33 @@ PRODUCT_PACKAGES += \
+     vendor.qti.hardware.display.mapper@4.0.vendor \
+     vendor.qti.hardware.display.mapperextensions@1.0.vendor \
+     vendor.qti.hardware.display.mapperextensions@1.1.vendor
++endif
+ 
+ ifneq ($(TARGET_USE_MESA),false)
+ PRODUCT_PACKAGES += \
+-    android.hardware.graphics.allocator@4.0-service.minigbm_msm \
+-    android.hardware.graphics.mapper@4.0-impl.minigbm_msm \
+-    gralloc.minigbm_msm \
+     gralloc.minigbm_gbm_mesa \
+     gralloc.gbm \
+     libgbm_mesa_wrapper
+ 
++ifeq ($(LEPTON_IS_X86_64),)
++PRODUCT_PACKAGES += \
++    android.hardware.graphics.allocator@4.0-service.minigbm_msm \
++    android.hardware.graphics.mapper@4.0-impl.minigbm_msm \
++    gralloc.minigbm_msm
++else
++# Lepton drops the mesa libraries from the image because SteamOS bind-mounts
++# Android-built mesa into the container from /usr/share/guestos/android.
++# A generic x86_64 host has no such directory, so the GL/Vulkan stack has to
++# live in the image itself.  vulkan.radeon comes from
++# BOARD_MESA3D_VULKAN_DRIVERS := amd in lepton_x86_64_only/BoardConfig.mk.
++PRODUCT_PACKAGES += \
++    libEGL_mesa \
++    libGLESv1_CM_mesa \
++    libGLESv2_mesa \
++    libgallium_dri \
++    dri_gbm \
++    vulkan.radeon
++endif
+ 
+ PRODUCT_COPY_FILES += \
+     frameworks/native/data/etc/android.hardware.opengles.aep.xml:$(TARGET_COPY_OUT_VENDOR)/etc/permissions/android.hardware.opengles.aep.xml
+diff --git a/lepton_x86_64_only/BoardConfig.mk b/lepton_x86_64_only/BoardConfig.mk
+new file mode 100644
+index 0000000..4c7d8c9
+--- /dev/null
++++ b/lepton_x86_64_only/BoardConfig.mk
+@@ -0,0 +1,45 @@
++# SPDX-License-Identifier: Apache-2.0
++#
++# x86_64 counterpart to lepton_arm64_only.
++#
++# Valve only ships the arm64 target (Steam Frame).  This board config keeps
++# every Lepton decision intact and only swaps the architecture plus the Vulkan
++# driver, because the arm64 target deliberately leaves the Vulkan driver empty
++# ("we inject vulkan drivers from elsewhere" -- turnip/adreno come from the
++# Steam Frame host).  There is nothing to inject on a generic x86_64 host, so
++# RADV is built in-tree.  vulkan.pastel (swiftshader) remains available as the
++# software fallback used by LEPTON_FORCE_SOFTWARE=true.
++
++-include device/waydroid/waydroid/BoardConfig.mk
++
++# Architecture
++TARGET_ARCH := x86_64
++TARGET_ARCH_VARIANT := x86_64
++TARGET_CPU_ABI := x86_64
++TARGET_CPU_ABI2 :=
++
++TARGET_2ND_ARCH :=
++TARGET_2ND_ARCH_VARIANT :=
++TARGET_2ND_CPU_ABI :=
++TARGET_2ND_CPU_ABI2 :=
++TARGET_2ND_CPU_VARIANT :=
++
++AUDIOSERVER_MULTILIB := first
++
++# zink (gallium) on top of RADV, mirroring the arm64 zink-on-turnip setup.
++ifneq ($(TARGET_USE_MESA),false)
++BOARD_MESA3D_GALLIUM_DRIVERS := zink
++BOARD_MESA3D_VULKAN_DRIVERS := amd
++endif
++
++# Partition size caps.
++#
++# These are pure build-time checks: package_rootfs.sh unpacks system.img and
++# vendor.img with sqfs2tar and the container runs from the extracted tree, so
++# no partition of this size is ever created.  They are raised because this
++# target puts the whole GL/Vulkan stack into the image, and every mesa module
++# is LOCAL_VENDOR_MODULE -- RADV plus zink-gallium plus the EGL/GLES shims
++# would otherwise run into the 80 MB vendor cap the arm64 target gets away
++# with (it has no mesa at all, SteamOS bind-mounts it from the host).
++BOARD_SYSTEMIMAGE_PARTITION_SIZE := 2147483648 # 2GB
++BOARD_VENDORIMAGE_PARTITION_SIZE := 268435456  # 256MB
+diff --git a/lepton_x86_64_only/lineage_lepton_x86_64_only.mk b/lepton_x86_64_only/lineage_lepton_x86_64_only.mk
+new file mode 100644
+index 0000000..83c841e
+--- /dev/null
++++ b/lepton_x86_64_only/lineage_lepton_x86_64_only.mk
+@@ -0,0 +1,13 @@
++# SPDX-License-Identifier: Apache-2.0
++
++# Inherit from those products. Most specific first.
++$(call inherit-product, $(SRC_TARGET_DIR)/product/core_64_bit_only.mk)
++
++# Inherit from waydroid device
++$(call inherit-product, $(LOCAL_PATH)/../device.mk)
++
++PRODUCT_BRAND := lepton
++PRODUCT_DEVICE := lepton_x86_64_only
++PRODUCT_MANUFACTURER := Lepton
++PRODUCT_NAME := lineage_lepton_x86_64_only
++PRODUCT_MODEL := Lepton x86_64 only Device

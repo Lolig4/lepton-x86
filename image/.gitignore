@@ -10,3 +10,4 @@ output/
 *.img
 *.tar.gz
 NOTICE.txt
+.ccache
