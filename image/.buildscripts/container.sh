@@ -17,6 +17,17 @@ PODMAN_ARGS=(
     -w /workspace
 )
 
+# On an SELinux host podman gives every container run its own MCS categories,
+# and files the build writes get labelled with them.  The next run has
+# different categories and cannot touch those files any more:
+#   rm: out/.../classes-full-debug.jar: Permission denied
+# A full build never noticed, because it creates and consumes everything in one
+# run; an incremental one dies somewhere in the middle.  The build tree is
+# bind-mounted from the host anyway, so per-container labels buy nothing here.
+if command -v getenforce >/dev/null && [[ "$(getenforce)" != "Disabled" ]]; then
+    PODMAN_ARGS+=( --security-opt label=disable )
+fi
+
 # Make sure we can use the host ssh keys for "repo sync":
 if [[ -n "${SSH_AUTH_SOCK:-}" ]]; then
     echo "Using host ssh agent during repo sync!"
