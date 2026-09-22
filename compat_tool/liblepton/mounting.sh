@@ -80,6 +80,9 @@ function setup_mounts()
     GUESTOS_OVERLAY="/usr/share/guestos/android"
 
     for OVERLAY in ${LEPTON_OVERLAY} ${GUESTOS_OVERLAY}; do
+        # GUESTOS_OVERLAY is provided by SteamOS packages (Android-built mesa,
+        # vulkan layers, ...); on other hosts it simply does not exist.
+        [[ -d "${OVERLAY}" ]] || continue
         pushd "${OVERLAY}" >/dev/null
         while IFS= read -r -d '' file; do
             DST="${file#./}"
@@ -241,6 +244,14 @@ function setup_podman_base()
 
     # seccomp
     podman_cmdline --security-opt seccomp=${LEPTON_DIR}/lepton.seccomp.json
+
+    # On SELinux hosts (Fedora and friends) the container would be denied the
+    # host files bind-mounted below -- the Wayland and PulseAudio sockets in
+    # $XDG_RUNTIME_DIR, the per-launch prefix under /tmp, Steam paths.  Sockets
+    # and shared host directories cannot sensibly be relabelled with :z, so
+    # disable label separation for this container, as toolbox and distrobox
+    # do.  No effect on hosts without SELinux (SteamOS).
+    podman_cmdline --security-opt label=disable
 }
 
 function podman_extract_rootfs_file()
@@ -510,7 +521,7 @@ function setup_podman_mounts()
     touch "${DATA_OVERLAY}/misc/ethernet/ipconfig.txt"
     podman_mount_entry "$(prefix)/ipconfig.txt" "/data/misc/ethernet/ipconfig.txt" rw
 
-    if ! is_sysbake; then
+    if ! is_sysbake && have_steamvr; then
         mkdir -p "${DATA_OVERLAY}/steamvr/runtime"
         # Add our steamvr build into `/data/steamvr/runtime` and `/data/steamvr/config`
         podman_mount_entry "$(steamvr path)" "/data/steamvr/runtime" rw
@@ -541,11 +552,12 @@ function setup_podman_mounts()
     # Mount steamclient.so directory.  Note that we have to add `libsteamclient` and friends
     # to `/system/etc/public.libraries.txt` so that it's all loadable.
     podman_extract_rootfs_file "/system/etc/public.libraries.txt" "${PREFIX}/mounts/public.libraries.txt"
-    if [[ -f "${STEAM_COMPAT_CLIENT_INSTALL_PATH:-}/androidarm64/libsteamclient.so" ]]; then
-        for LIBNAME in "${STEAM_COMPAT_CLIENT_INSTALL_PATH}/androidarm64/"*.so; do
+    local STEAM_ANDROID_LIBDIR="$(lepton_steam_android_libdir)"
+    if [[ -f "${STEAM_COMPAT_CLIENT_INSTALL_PATH:-}/${STEAM_ANDROID_LIBDIR}/libsteamclient.so" ]]; then
+        for LIBNAME in "${STEAM_COMPAT_CLIENT_INSTALL_PATH}/${STEAM_ANDROID_LIBDIR}/"*.so; do
             LIBNAME="$(lepton_basename "${LIBNAME}")"
             println "${LIBNAME} nopreload" >>"${PREFIX}/mounts/public.libraries.txt"
-            podman_mount_entry "${STEAM_COMPAT_CLIENT_INSTALL_PATH}/androidarm64/${LIBNAME}" "/system/lib64/${LIBNAME}" ro,U
+            podman_mount_entry "${STEAM_COMPAT_CLIENT_INSTALL_PATH}/${STEAM_ANDROID_LIBDIR}/${LIBNAME}" "/system/lib64/${LIBNAME}" ro,U
         done
     fi
     podman_mount_entry "${PREFIX}/mounts/public.libraries.txt" "/system/etc/public.libraries.txt" ro,U
@@ -576,6 +588,11 @@ function setup_podman_mounts()
         if [[ "$(android_sdk_version)" == "30" ]]; then
             disable_default_allocator
         fi
+        disable_minigbm
+        disable_qti_display
+    elif [[ "$(lepton_arch)" == "x86_64" ]]; then
+        # Neither the Qualcomm display HAL nor the minigbm_msm allocator exist
+        # on this hardware; ro.hardware.gralloc=gbm is used instead.
         disable_minigbm
         disable_qti_display
     else

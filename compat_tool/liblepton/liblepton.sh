@@ -14,7 +14,12 @@ STEAMAPPS_PATH="${STEAM_PATH}/steamapps"
 
 APK_AUTO_INSTALL_DIR="${HOME}/lepton_auto_install_apks"
 
+# SteamOS ships adb at the Arch path; fall back to whatever is in PATH
+# (Fedora/Debian install it as /usr/bin/adb via android-tools).
 ADB="/usr/lib/android-sdk/platform-tools/adb"
+if [[ ! -x "${ADB}" ]]; then
+    ADB="$(command -v adb || true)"
+fi
 
 # Include our libraries of functionality
 source "${LEPTON_DIR}/utils.sh"
@@ -91,9 +96,11 @@ function clear_baked_app_data()
 function remove_prefix()
 {
     if [[ -n "${LEPTON_PREFIX:-}" ]]; then
-        prepare_baked_data_for_removal
-
-        # clear the whole prefix
+        # NOTE: upstream also calls prepare_baked_data_for_removal() here.  That
+        # deletes the baked /data overlay -- the very thing is_app_baked() looks
+        # for -- on every teardown, so the app is reinstalled on every single
+        # start.  The prefix is its own temp directory; clear_baked_app_data()
+        # still prepares the baked dirs when they really are meant to go.
         rm -rf "${LEPTON_PREFIX}"
     fi
 }
@@ -141,7 +148,15 @@ function setup_container()
 
     setup_mounts
 
+    # SteamOS runs apps under gamescope, whose socket is gamescope-0.  On a
+    # regular desktop session (KDE, GNOME, ...) there is no gamescope; fall back
+    # to the session's own compositor instead of failing to mount the socket.
+    local HOST_WAYLAND_DISPLAY="${WAYLAND_DISPLAY:-}"
     export WAYLAND_DISPLAY="${GAMESCOPE_WAYLAND_DISPLAY:-gamescope-0}"
+    if [[ ! -e "${XDG_RUNTIME_DIR}/${WAYLAND_DISPLAY}" && -n "${HOST_WAYLAND_DISPLAY}" \
+          && -e "${XDG_RUNTIME_DIR}/${HOST_WAYLAND_DISPLAY}" ]]; then
+        export WAYLAND_DISPLAY="${HOST_WAYLAND_DISPLAY}"
+    fi
     export PULSE_RUNTIME_PATH="$XDG_RUNTIME_DIR/pulse"
 
     # Workaround for users who are stuck on older OS versions; drop this
@@ -332,6 +347,32 @@ function wait_for_container()
         println "Waiting for ${CONTEXT} to exit..."
     fi
 
+    local WAIT_WINDOW_PID=""
+    if is_app && [[ "${LEPTON_APP_ONLY:-false}" == "true" ]]; then
+        # In app-only mode the app owns the only window on the desktop.
+        # Closing it ends the Android task, but Android keeps the process
+        # cached, so the process observer never reports an exit and we would
+        # wait forever.  "Had a window, has none" is the app being closed.
+        (
+            uninherit_lepton_lock
+
+            SAW_WINDOW=false
+            while true; do
+                WINDOWS="$(podman_attach --no-term sh -c 'getprop waydroid.open_windows' 2>/dev/null | tr -cd '0-9')"
+                if [[ -n "${WINDOWS}" ]]; then
+                    if (( WINDOWS > 0 )); then
+                        SAW_WINDOW=true
+                    elif [[ "${SAW_WINDOW}" == "true" ]]; then
+                        touch "$(onexit_path)"
+                        break
+                    fi
+                fi
+                sleep 2
+            done
+        ) &
+        WAIT_WINDOW_PID="$!"
+    fi
+
     # NOTE: We intentionally do this `background-then-wait` pattern to ensure that SIGINT still works.
     (
         uninherit_lepton_lock
@@ -345,6 +386,10 @@ function wait_for_container()
         wait "${WAIT_FILE_PID}" 2>/dev/null >/dev/null
 
         pkill -P "${WAIT_PID}" 2>/dev/null || true
+        if [[ -n "${WAIT_WINDOW_PID}" ]]; then
+            pkill -P "${WAIT_WINDOW_PID}" 2>/dev/null || true
+            kill "${WAIT_WINDOW_PID}" 2>/dev/null || true
+        fi
     else
         wait "${WAIT_PID}" 2>/dev/null >/dev/null
     fi
@@ -492,7 +537,18 @@ function install_app()
         local TEMP_PORT=$((ADB_PORT - 500))
         # Kill first to remove old connections
         "$ADB" -P "${TEMP_PORT}" kill-server 2>/dev/null
-        "$ADB" -P "${TEMP_PORT}" connect localhost:"${ADB_PORT}" >/dev/null 2>/dev/null
+        # adbd starts listening shortly after boot completes, and pasta's
+        # `-t auto` forwarding only picks the port up on its next scan, so a
+        # single connect right after boot can lose that race (it does with a
+        # fast, baked boot).  Retry until the device reports as `device`.
+        local ADB_TRIES
+        for ADB_TRIES in $(seq 1 30); do
+            "$ADB" -P "${TEMP_PORT}" connect localhost:"${ADB_PORT}" >/dev/null 2>/dev/null || true
+            if [[ "$("$ADB" -P "${TEMP_PORT}" -s localhost:"${ADB_PORT}" get-state 2>/dev/null)" == "device" ]]; then
+                break
+            fi
+            sleep 1
+        done
         if ! is_steamlaunch; then
             if [[ -f "${APP_ID_FILE}" ]]; then
                 "$ADB" -P "${TEMP_PORT}" -s localhost:"${ADB_PORT}" push "${APP_ID_FILE}" /data/steam_app

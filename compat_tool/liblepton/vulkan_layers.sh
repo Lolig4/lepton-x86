@@ -7,7 +7,7 @@
 #
 #  - /data/local/debug/vulkan
 #  - /{vendor,system}/lib64
-#  - /data/app/xyz/foo-xyz/lib/arm64
+#  - /data/app/xyz/foo-xyz/lib/<abi>
 #
 # The implicit layers are loaded from APKs pointed to by the settings, which you set up via commands
 # such as the folloing:
@@ -30,7 +30,7 @@ RPO_LAYER_NAME="libVkLayer_VALVE_rpo.so"
 FDM_INJECTION_LAYER_NAME="libVkLayer_VALVE_fdm_injection.so"
 FOSSILIZE_LAYER_NAME="libVkLayer_fossilize.so"
 
-RENDERDOC_APP_ID="org.renderdoc.renderdoccmd.arm64"
+RENDERDOC_APP_ID="org.renderdoc.renderdoccmd.$(lepton_app_abi_dir)"
 RENDERDOC_LAYER_NAME="libVkLayer_GLES_RenderDoc.so"
 
 # This layer doesn't have a json, so we special case it
@@ -177,8 +177,12 @@ function enable_vulkan_layers()
         unset ENABLE_VULKAN_FDM_INJECTION_LAYER
     fi
 
-    # Fossilize goes after any other normal layers
-    enable_vulkan_layer "${FOSSILIZE_LAYER_NAME}"
+    # Fossilize goes after any other normal layers.  It records pipelines for
+    # Steam's shader cache and ships in SteamOS' Android layer package under
+    # /usr/share/guestos; hosts without that package run fine without it.
+    if ! enable_vulkan_layer "${FOSSILIZE_LAYER_NAME}"; then
+        println " -> Continuing without fossilize (no Steam shader pipeline capture)"
+    fi
 
     # If you want to debug the app + layers, vulkan validation layers inserted here makes sense
     if [[ "${ENABLE_VULKAN_VALIDATION_LAYER_LATE:-0}" != "0" ]]; then

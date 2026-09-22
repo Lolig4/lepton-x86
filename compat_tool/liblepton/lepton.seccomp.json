@@ -3,11 +3,20 @@
   "archMap": [
     {
       "architecture": "SCMP_ARCH_AARCH64"
+    },
+    {
+      "architecture": "SCMP_ARCH_X86_64",
+      "subArchitectures": [
+        "SCMP_ARCH_X86",
+        "SCMP_ARCH_X32"
+      ]
     }
   ],
   "syscalls": [
     {
-      "names": ["open_by_handle_at"],
+      "names": [
+        "open_by_handle_at"
+      ],
       "action": "SCMP_ACT_ERRNO",
       "errnoRet": 38
     },

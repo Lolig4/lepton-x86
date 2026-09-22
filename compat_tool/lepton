@@ -211,7 +211,10 @@ case "${COMMAND}" in
                 println "Dumping logcat to $(logcat_debug_dir)"
                 dump_logcat "$(logcat_debug_dir)"
 
-                if [[ "${EARLY_SHUTDOWN}" == "1" ]]; then
+                # An install-only run is short on purpose; this guard is meant
+                # for apps that crash right after being started.
+                if [[ "${EARLY_SHUTDOWN}" == "1" ]] &&
+                   [[ "${LEPTON_INSTALL_ONLY:-false}" != "true" ]]; then
                     # Clearing baked app data in this case since something might be wrong.
                     clear_baked_app_data "early exit"
                 fi
@@ -256,7 +259,14 @@ case "${COMMAND}" in
                 update_baked_app_metadata
                 # If the app is not baked yet, the container will wait for a
                 # property.
-                continue_boot_after_bake
+                if [[ "${LEPTON_INSTALL_ONLY:-false}" == "true" ]]; then
+                    # Install and stop, the way Steam installs a game: the next
+                    # start boots with the app already baked in.
+                    println "App installed; stopping the container (LEPTON_INSTALL_ONLY)."
+                    LEPTON_SKIP_APP_WAIT=true
+                else
+                    continue_boot_after_bake
+                fi
             fi
         fi
 
@@ -267,7 +277,9 @@ case "${COMMAND}" in
             start_traced_probes
         fi
 
-        wait_for_container
+        if [[ "${LEPTON_SKIP_APP_WAIT:-false}" != "true" ]]; then
+            wait_for_container
+        fi
         teardown
         ;;
     sysbake)
