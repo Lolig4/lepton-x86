@@ -290,14 +290,22 @@ function generate_app_launch_rc()
     fi
 
     # A desktop has a keyboard, and Lepton hands it to Android as
-    # `wayland_keyboard`.  Android would still put its own on-screen keyboard
-    # over the app, because the image ships
-    # show_ime_with_hard_keyboard=1, and it covers half the window.  Turning
-    # that off is what the setting is for: no soft keyboard while a real one is
-    # attached.  LEPTON_SOFT_KEYBOARD=true brings it back.
+    # `wayland_keyboard`.  Android's own on-screen keyboard would still cover
+    # half the app: it arrives as a second, empty window on the desktop, and
+    # its first appearance stalls the app for seconds while LatinIME loads its
+    # dictionaries.  LEPTON_SOFT_KEYBOARD=true keeps it for a machine that has
+    # no keyboard of its own.
+    #
+    # As a script, not as a command in the rc file: init fails to parse a `$`
+    # that is not a `${property}` and drops the whole line.
     if [[ "${LEPTON_SOFT_KEYBOARD:-false}" != "true" ]]; then
+        local HOST_INPUT_SETUP="$(prefix ${1:-})/input_setup.sh"
+        local CONTAINER_INPUT_SETUP="/vendor/share/input_setup.sh"
+        generate_input_setup_script > "${HOST_INPUT_SETUP}"
+        chmod 0755 "${HOST_INPUT_SETUP}"
         println "on property:sys.boot_completed=1" >>"${APP_LAUNCH_RC}"
-        println "    exec -- /system/bin/sh -c \"settings put secure show_ime_with_hard_keyboard 0\"" >>"${APP_LAUNCH_RC}"
+        println "    exec -- /system/bin/sh ${CONTAINER_INPUT_SETUP}" >>"${APP_LAUNCH_RC}"
+        podman_mount_entry "${HOST_INPUT_SETUP}" "${CONTAINER_INPUT_SETUP}" ro,U
     fi
 
     # Only do this if we actually have an app we're trying to launch
@@ -339,6 +347,33 @@ function generate_app_launch_rc()
     podman_mount_entry "${APP_LAUNCH_RC}" "/vendor/etc/init/$(lepton_basename "${APP_LAUNCH_RC}")" ro,U
 }
 
+
+# Keeps Android's on-screen keyboard out of the way.  The setting alone is not
+# enough: it only covers a keyboard Android offers by itself, while an app that
+# asks for one explicitly -- a search field does -- gets it anyway.  So the
+# input methods go as well; text still arrives from the desktop's keyboard,
+# which Android sees as a hardware one.
+function generate_input_setup_script()
+{
+    cat <<'SCRIPT'
+#!/system/bin/sh
+settings put secure show_ime_with_hard_keyboard 0
+
+# The input method service answers later than sys.boot_completed, and it turns
+# the keyboard back on when it comes up, so keep at it for a while.  In the
+# background: init waits for this script and would hold up the app.
+(
+    i=0
+    while [ "${i}" -lt 30 ]; do
+        for ime in $(ime list -s 2>/dev/null); do
+            ime disable "${ime}" >/dev/null 2>&1
+        done
+        i=$((i + 1))
+        sleep 1
+    done
+) &
+SCRIPT
+}
 
 function generate_zygote_launch_rc()
 {
