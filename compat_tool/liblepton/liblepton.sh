@@ -186,6 +186,24 @@ function onexit_path()
     print "$(data_mount_path)/lepton-on-app-exit"
 }
 
+# True while a window of the session is still on screen.  Used to tell an app
+# that Android killed and left a window of its own behind from an app that is
+# really done.
+function session_window_open()
+{
+    [[ "${LEPTON_APP_ONLY:-false}" == "true" ]] || return 1
+    local i windows
+    for i in $(seq 1 5); do
+        podman ps --format '{{.Names}}' | grep -qx "lepton-${LEPTON_CONTEXT}" || return 1
+        windows="$(podman_attach --no-term sh -c 'getprop waydroid.open_windows' 2>/dev/null | tr -cd '0-9')"
+        if [[ -n "${windows}" ]] && (( windows > 0 )); then
+            return 0
+        fi
+        sleep 1
+    done
+    return 1
+}
+
 # Marks that the app actually had a window on screen.  Tells a session the user
 # ended from an app that died on startup.
 function saw_window_path()
@@ -346,7 +364,18 @@ function wait_for_container()
         (
             uninherit_lepton_lock
 
-            wait_for_file "$(onexit_path)"
+            # Android reports the app's process ending, and that is not
+            # always the session ending: changing an app op -- granting
+            # "install unknown apps" is the common one -- makes Android kill
+            # the app, while the screen it opened to ask for it stays up in the
+            # app's own task.  The session belongs to the window, so an exit
+            # that leaves one behind is ignored; the watcher below ends the
+            # session once the last window is gone.
+            while true; do
+                wait_for_file "$(onexit_path)"
+                session_window_open || break
+                rm -f "$(onexit_path)"
+            done
         ) &
 
         WAIT_FILE_PID="$!"
