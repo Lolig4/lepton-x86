@@ -289,6 +289,17 @@ function generate_app_launch_rc()
         println "    exec -- /system/bin/cmd lepton mount_vulkan_layers" >>"${APP_LAUNCH_RC}"
     fi
 
+    # A desktop has a keyboard, and Lepton hands it to Android as
+    # `wayland_keyboard`.  Android would still put its own on-screen keyboard
+    # over the app, because the image ships
+    # show_ime_with_hard_keyboard=1, and it covers half the window.  Turning
+    # that off is what the setting is for: no soft keyboard while a real one is
+    # attached.  LEPTON_SOFT_KEYBOARD=true brings it back.
+    if [[ "${LEPTON_SOFT_KEYBOARD:-false}" != "true" ]]; then
+        println "on property:sys.boot_completed=1" >>"${APP_LAUNCH_RC}"
+        println "    exec -- /system/bin/sh -c \"settings put secure show_ime_with_hard_keyboard 0\"" >>"${APP_LAUNCH_RC}"
+    fi
+
     # Only do this if we actually have an app we're trying to launch
     if is_app; then
         println "on property:sys.boot_completed=1 && property:ro.lepton.app_baked=1" >>"${APP_LAUNCH_RC}"
