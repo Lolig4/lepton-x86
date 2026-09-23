@@ -377,7 +377,7 @@ index c326ec1..3443bb4 100644
      window *get_window(waydroid_hwc_composer_device_1 *pdev) const;
  
 diff --git a/hwcomposer/wayland-hwc.cpp b/hwcomposer/wayland-hwc.cpp
-index ce1637a..594e057 100644
+index ce1637a..50f9229 100644
 --- a/hwcomposer/wayland-hwc.cpp
 +++ b/hwcomposer/wayland-hwc.cpp
 @@ -79,6 +79,7 @@
@@ -414,7 +414,7 @@ index ce1637a..594e057 100644
  {
      struct window *window = (struct window *)data;
      struct display *display = window->display;
-@@ -208,6 +223,93 @@ xdg_toplevel_handle_configure(void *data, struct xdg_toplevel *,
+@@ -208,6 +223,96 @@ xdg_toplevel_handle_configure(void *data, struct xdg_toplevel *,
  		return;
  	}
  
@@ -444,7 +444,10 @@ index ce1637a..594e057 100644
 +        const int32_t disp_w = (int32_t)lround(display->width * display->scale);
 +        const int32_t disp_h = (int32_t)lround(display->height * display->scale);
 +        want_w = std::min(want_w, disp_w);
-+        want_h = std::min(want_h, disp_h);
++        // Minus what Android keeps free at the top: it moves a task out of the
++        // status bar area without making it shorter, so a task the full height
++        // of the display ends up hanging over the bottom edge.
++        want_h = std::min(want_h, disp_h - display->task_inset_top);
 +        int32_t at_x = std::max(0, std::min(window->crop_x, disp_w - want_w));
 +        int32_t at_y = std::max(0, std::min(window->crop_y, disp_h - want_h));
 +
@@ -508,7 +511,7 @@ index ce1637a..594e057 100644
      display->req_width = width;
      display->req_height = height;
  }
-@@ -236,6 +338,8 @@ xdg_toplevel_handle_close(void *data, struct xdg_toplevel *)
+@@ -236,6 +341,8 @@ xdg_toplevel_handle_close(void *data, struct xdg_toplevel *)
          }
      }
  
@@ -517,7 +520,7 @@ index ce1637a..594e057 100644
      std::scoped_lock lock(window->display->windowsMutex);
      std::string key;
      if (window->taskID != "0" && window->taskID != "none") {
-@@ -345,11 +449,11 @@ void surface_context::set_crop(hwc_frect_t crop) {
+@@ -345,11 +452,11 @@ void surface_context::set_crop(hwc_frect_t crop) {
                             wl_fixed_from_double(height));
  }
  
@@ -532,7 +535,7 @@ index ce1637a..594e057 100644
  
      wp_viewport_set_destination(viewport,
                                  std::max(1, width),
-@@ -404,6 +508,127 @@ void window::set_app_id(std::string appID) {
+@@ -404,6 +511,158 @@ void window::set_app_id(std::string appID) {
      }
  }
  
@@ -557,12 +560,43 @@ index ce1637a..594e057 100644
 +    crop_w = w;
 +    crop_h = h;
 +
++    fit_task_on_display();
 +    match_wanted_size();
 +    if (first) {
 +        wl_surface_attach(surface, bg_buffer, 0, 0);
 +        wp_viewport_set_source(viewport, wl_fixed_from_int(0), wl_fixed_from_int(0), wl_fixed_from_int(1), wl_fixed_from_int(1));
 +    }
 +    apply_geometry();
++}
++
++// Android answers a resize by moving the task below the status bar area while
++// keeping the height it was given, so the bottom of the task ends up past the
++// display and that part of the app is never drawn.  Note how far it moved and
++// ask once more for a height that fits.
++void window::fit_task_on_display() {
++    if (!cropped || crop_h <= 0 || taskID == "0" || taskID == "none")
++        return;
++
++    const int32_t disp_h = (int32_t)lround(display->height * display->scale);
++    const int32_t overhang = crop_y + crop_h - disp_h;
++    if (overhang <= 0)
++        return;
++
++    display->task_inset_top = std::max(display->task_inset_top, crop_y);
++
++    if (display->task == nullptr || resize_pending)
++        return;
++
++    const int32_t fits = crop_h - overhang;
++    if (fits <= 0)
++        return;
++
++    auto ret = display->task->resizeTask(stoi(taskID), crop_x, crop_y,
++                                         crop_x + crop_w, crop_y + fits);
++    if (ret.isOk()) {
++        resize_pending = true;
++        resize_asked_at = std::chrono::steady_clock::now();
++    }
 +}
 +
 +// Window size = task size * user zoom, in compositor logical pixels.
@@ -660,7 +694,7 @@ index ce1637a..594e057 100644
  void window::minimize() {
      if (xdg_toplevel) {
          xdg_toplevel_set_minimized(xdg_toplevel);
-@@ -413,6 +638,8 @@ void window::minimize() {
+@@ -413,6 +672,8 @@ void window::minimize() {
  }
  
  window::~window() {
@@ -669,7 +703,7 @@ index ce1637a..594e057 100644
      if (xdg_toplevel)
          xdg_toplevel_destroy(xdg_toplevel);
      if (xdg_surface)
-@@ -457,7 +684,7 @@ static const struct wp_fractional_scale_v1_listener fractional_scale_listener =
+@@ -457,7 +718,7 @@ static const struct wp_fractional_scale_v1_listener fractional_scale_listener =
  };
  
  std::unique_ptr<window>
@@ -678,7 +712,7 @@ index ce1637a..594e057 100644
  {
      std::unique_ptr<window> window { new struct window() };
      if (!window)
-@@ -471,6 +698,9 @@ window::create(struct display *display, bool use_subsurfaces, std::string appID,
+@@ -471,6 +732,9 @@ window::create(struct display *display, bool use_subsurfaces, std::string appID,
      window->taskID = std::move(taskID);
      window->dedicated_background_surface = true;
      window->bg_buffer = nullptr;
@@ -688,7 +722,7 @@ index ce1637a..594e057 100644
  
      int fd = syscall(SYS_memfd_create, "buffer", 0);
      ftruncate(fd, 4);
-@@ -496,6 +726,15 @@ window::create(struct display *display, bool use_subsurfaces, std::string appID,
+@@ -496,6 +760,15 @@ window::create(struct display *display, bool use_subsurfaces, std::string appID,
          window->xdg_toplevel = xdg_surface_get_toplevel(window->xdg_surface);
          assert(window->xdg_toplevel);
          xdg_toplevel_add_listener(window->xdg_toplevel, &xdg_toplevel_listener, window.get());
@@ -704,7 +738,7 @@ index ce1637a..594e057 100644
      } else if (display->shell) {
          window->shell_surface =
              wl_shell_get_shell_surface(display->shell, window->surface);
-@@ -506,7 +745,7 @@ window::create(struct display *display, bool use_subsurfaces, std::string appID,
+@@ -506,7 +779,7 @@ window::create(struct display *display, bool use_subsurfaces, std::string appID,
          abort();
      }
  
@@ -713,7 +747,7 @@ index ce1637a..594e057 100644
          window->set_maximize(true);
      }
      // Set title
-@@ -523,6 +762,19 @@ window::create(struct display *display, bool use_subsurfaces, std::string appID,
+@@ -523,6 +796,19 @@ window::create(struct display *display, bool use_subsurfaces, std::string appID,
  
      wl_surface_commit(window->surface);
  
@@ -733,7 +767,7 @@ index ce1637a..594e057 100644
      if (calibrating) {
          // Wait for first configure event
          do {
-@@ -565,18 +817,18 @@ window::create(struct display *display, bool use_subsurfaces, std::string appID,
+@@ -565,18 +851,18 @@ window::create(struct display *display, bool use_subsurfaces, std::string appID,
              window->set_maximize(false);
      }
  
@@ -755,7 +789,7 @@ index ce1637a..594e057 100644
          wl_region_add(region, 0, 0, display->width, display->height);
          wl_surface_set_opaque_region(window->surface, region);
          wl_region_destroy(region);
-@@ -605,6 +857,11 @@ window::create(struct display *display, bool use_subsurfaces, std::string appID,
+@@ -605,6 +891,11 @@ window::create(struct display *display, bool use_subsurfaces, std::string appID,
      window->bg_buffer = wl_shm_pool_create_buffer(pool, 0, 1, 1, 4, WL_SHM_FORMAT_ARGB8888);
      wl_shm_pool_destroy(pool);
  
@@ -767,7 +801,7 @@ index ce1637a..594e057 100644
      wl_surface_attach(window->surface, window->bg_buffer, 0, 0);
      wl_surface_damage(window->surface, 0, 0, INT32_MAX, INT32_MAX);
      wp_viewport_set_source(window->viewport, wl_fixed_from_int(0), wl_fixed_from_int(0), wl_fixed_from_int(1), wl_fixed_from_int(1));
-@@ -891,8 +1148,15 @@ pointer_handle_motion(void *data, struct wl_pointer *,
+@@ -891,8 +1182,15 @@ pointer_handle_motion(void *data, struct wl_pointer *,
          x = int(x * display->scale);
          y = int(y * display->scale);
      }
@@ -785,7 +819,7 @@ index ce1637a..594e057 100644
  
      ADD_EVENT(EV_ABS, ABS_X, x);
      ADD_EVENT(EV_ABS, ABS_Y, y);
-@@ -1130,8 +1394,15 @@ touch_handle_down(void *data, struct wl_touch *,
+@@ -1130,8 +1428,15 @@ touch_handle_down(void *data, struct wl_touch *,
          x = int(x * display->scale);
          y = int(y * display->scale);
      }
@@ -803,7 +837,7 @@ index ce1637a..594e057 100644
  
      ADD_EVENT(EV_ABS, ABS_MT_SLOT, touch_id);
      ADD_EVENT(EV_ABS, ABS_MT_TRACKING_ID, touch_id);
-@@ -1202,8 +1473,15 @@ touch_handle_motion(void *data, struct wl_touch *,
+@@ -1202,8 +1507,15 @@ touch_handle_motion(void *data, struct wl_touch *,
              x = int(x * display->scale);
              y = int(y * display->scale);
          }
@@ -821,7 +855,40 @@ index ce1637a..594e057 100644
  
          ADD_EVENT(EV_ABS, ABS_MT_SLOT, touch_id);
          ADD_EVENT(EV_ABS, ABS_MT_TRACKING_ID, touch_id);
-@@ -1670,8 +1948,15 @@ tablet_tool_motion(void *data, struct zwp_tablet_tool_v2 *,
+@@ -1415,18 +1727,25 @@ static const struct zwp_linux_dmabuf_v1_listener dmabuf_listener = {
+ 
+ static void
+ output_handle_mode(void *data, struct wl_output *,
+-                   uint32_t, int32_t width, int32_t height,
++                   uint32_t flags, int32_t width, int32_t height,
+                    int32_t refresh)
+ {
+     struct display *d = (struct display *)data;
++
++    // An output announces every mode it can do, not just the one in use.
++    if (!(flags & WL_OUTPUT_MODE_CURRENT))
++        return;
++
+     d->refresh = std::max(d->refresh, refresh);
+ 
+-    // Fallback size
+-    // We can't do anything meaningful if there's more than one display, just pick one at random
+-    // Hopefully these won't need to be used
+-    // NOTICE: Actually, this is wrong when using scaling. We should probably use xdg_output instead.
+-    d->full_width = width;
+-    d->full_height = height;
++    // With more than one output, take the largest.  The Android display is
++    // what limits how big a window can grow, so picking the small screen of a
++    // multi-monitor desk would cap every window at its size.
++    // NOTICE: this is wrong when using scaling. We should probably use xdg_output instead.
++    if ((int64_t)width * height > (int64_t)d->full_width * d->full_height) {
++        d->full_width = width;
++        d->full_height = height;
++    }
+ }
+ 
+ static void
+@@ -1670,8 +1989,15 @@ tablet_tool_motion(void *data, struct zwp_tablet_tool_v2 *,
              x = int(x * display->scale);
              y = int(y * display->scale);
          }
@@ -839,7 +906,7 @@ index ce1637a..594e057 100644
  
          ADD_EVENT(EV_ABS, ABS_X, x);
          ADD_EVENT(EV_ABS, ABS_Y, y);
-@@ -1933,6 +2218,9 @@ registry_handle_global(void *data, struct wl_registry *registry,
+@@ -1933,6 +2259,9 @@ registry_handle_global(void *data, struct wl_registry *registry,
      } else if (strcmp(interface, wp_fractional_scale_manager_v1_interface.name) == 0) {
          d->fractional_scale_manager = (struct wp_fractional_scale_manager_v1*)wl_registry_bind(registry, id,
                  &wp_fractional_scale_manager_v1_interface, 1);
@@ -849,7 +916,7 @@ index ce1637a..594e057 100644
      } else if (strcmp(interface, wl_data_device_manager_interface.name) == 0) {
          d->data_device_manager = (struct wl_data_device_manager *)wl_registry_bind(registry, id,
                  &wl_data_device_manager_interface, std::min(version,  3U));
-@@ -1984,12 +2272,12 @@ wayland_log_handler (const char *format, va_list args)
+@@ -1984,12 +2313,12 @@ wayland_log_handler (const char *format, va_list args)
      LOG_PRI_VA (ANDROID_LOG_ERROR, "wayland-hwc", format, args);
  }
  
@@ -865,7 +932,7 @@ index ce1637a..594e057 100644
          assert(res.second);
          window = res.first->second.get();
 diff --git a/hwcomposer/wayland-hwc.h b/hwcomposer/wayland-hwc.h
-index 775e457..20a4f17 100644
+index 775e457..851b772 100644
 --- a/hwcomposer/wayland-hwc.h
 +++ b/hwcomposer/wayland-hwc.h
 @@ -57,6 +57,7 @@
@@ -955,11 +1022,12 @@ index 775e457..20a4f17 100644
  
      window::layer &get_next_layer();
      window::layer &create_new_layer();
-@@ -225,6 +266,15 @@ struct window {
+@@ -225,6 +266,16 @@ struct window {
      void set_maximize(bool enabled);
      void set_title(const char *title);
      void set_app_id(std::string appID);
 +    void set_crop(const hwc_rect_t &bounds);
++    void fit_task_on_display();
 +    void set_user_scale(double scale_x, double scale_y);
 +    void match_wanted_size();
 +    void apply_geometry();
@@ -971,7 +1039,7 @@ index 775e457..20a4f17 100644
  
    private:
      window() = default;
-@@ -273,7 +323,7 @@ class open_windows {
+@@ -273,7 +324,7 @@ class open_windows {
          property_set("waydroid.open_windows", windows_size_str.c_str());
      }
  
@@ -980,7 +1048,7 @@ index 775e457..20a4f17 100644
      void add(const std::string& key, std::unique_ptr<window> window);
      void clear();
      void erase(const_iterator pos);
-@@ -328,6 +378,7 @@ struct display {
+@@ -328,6 +379,7 @@ struct display {
      struct zwp_idle_inhibit_manager_v1 *idle_manager;
      struct wp_fractional_scale_manager_v1 *fractional_scale_manager;
      struct wl_data_device_manager *data_device_manager;
@@ -988,7 +1056,19 @@ index 775e457..20a4f17 100644
      struct wl_data_device *data_device;
  
      int system_version;
-@@ -386,6 +437,10 @@ struct display {
+@@ -368,6 +420,11 @@ struct display {
+     int height;
+     int full_width;
+     int full_height;
++    // How far Android pushes a task down from the top of the display: it keeps
++    // freeform tasks out of the status bar area but does not shorten them, so
++    // a task as tall as the display hangs over the bottom edge and loses that
++    // much of its picture.  Learned from the first task that hangs over.
++    int32_t task_inset_top = 0;
+     int req_width;
+     int req_height;
+     int refresh;
+@@ -386,6 +443,10 @@ struct display {
      bool supports_cursor_hw_buffer;
  
      bool isMaximized;
@@ -999,7 +1079,7 @@ index 775e457..20a4f17 100644
      sp<IWaydroidTask> task;
  };
  
-@@ -398,5 +453,8 @@ snapshot_inactive_app_window(struct display *display, struct window *window);
+@@ -398,5 +459,8 @@ snapshot_inactive_app_window(struct display *display, struct window *window);
  
  struct display *
  create_display(const char* gralloc);
