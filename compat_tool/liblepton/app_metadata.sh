@@ -159,6 +159,19 @@ function app_wants_flatscreen()
         APP_WANTS_FLATSCREEN="true"
     fi
 
+    # An install-only run shows nothing: it installs the app and exits.
+    if [[ "${LEPTON_INSTALL_ONLY:-false}" == "true" ]]; then
+        return 1
+    fi
+
+    # Explicit request from the environment.  Needed for plain APKs outside
+    # Steam: they count as `is_app`, and the per-app marker file lives in the
+    # Steam install dir, which does not exist then -- so without this they
+    # would always run headless, i.e. invisibly, on a desktop without VR.
+    if [[ "${LEPTON_SHOW_FLATSCREEN:-false}" == "true" ]]; then
+        APP_WANTS_FLATSCREEN="true"
+    fi
+
     # Allow certain dev workloads (such as `gfxreconstruct`) to explicitly request
     # headless operation through their context name, and make that override any
     # other logic we've got above, except for `APP_FLATSCREEN_FILE`.

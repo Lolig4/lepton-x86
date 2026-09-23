@@ -16,6 +16,33 @@ function die()
     exit 1
 }
 
+# Lepton was written for the Steam Frame (arm64) only.  These helpers keep the
+# architecture-dependent bits in one place so the same tool works on x86_64.
+function lepton_arch()
+{
+    print "$(uname -m)"
+}
+
+# Android's per-abi library directory inside /data/app/<pkg>/lib/<abi>
+function lepton_app_abi_dir()
+{
+    case "$(lepton_arch)" in
+        aarch64) print "arm64" ;;
+        x86_64)  print "x86_64" ;;
+        *)       print "arm64" ;;
+    esac
+}
+
+# Suffix Steam uses for its android client libraries
+function lepton_steam_android_libdir()
+{
+    case "$(lepton_arch)" in
+        aarch64) print "androidarm64" ;;
+        x86_64)  print "androidx86_64" ;;
+        *)       print "androidarm64" ;;
+    esac
+}
+
 function container_pid()
 {
     print "$(podman inspect -f '{{.State.Pid}}' "lepton-${LEPTON_CONTEXT}" 2>/dev/null || true)"
@@ -59,6 +86,11 @@ function wait_for_file()
     local FILE="$(lepton_basename "${1}")"
     local DIR="$(dirname "${1}")"
     local ALLOW_PREEXIST="${2:-}"
+    # inotifywait runs with its output discarded below, so if it is missing
+    # the watcher exits at once and this function returns as though the file
+    # had appeared: boot, bake and app-exit waits all silently stop waiting.
+    # SteamOS ships inotify-tools; other hosts may not.
+    command -v inotifywait >/dev/null || die "inotifywait not found (install inotify-tools)"
     mkdir -p "${DIR}"
     (
         uninherit_lepton_lock
@@ -82,7 +114,25 @@ function wait_for_container_file()
     fi
 }
 
-STEAMVR_LOGS_DIR="$(steamvr logpath || true)"
+# `steamvr` is the SteamOS helper from the deckard-steamvr package; it only
+# exists on a Steam Frame / SteamOS install.  Elsewhere Lepton can still run
+# flatscreen apps, so treat a missing helper as "no VR runtime" instead of
+# failing the launch.
+function have_steamvr()
+{
+    command -v steamvr >/dev/null
+}
+
+STEAMVR_LOGS_DIR=""
+if have_steamvr; then
+    STEAMVR_LOGS_DIR="$(steamvr logpath || true)"
+fi
+# Lepton writes its own launch logs and logcat dumps next to SteamVR's.  Without
+# SteamVR that directory would be empty and the logs would go to "/" and fail.
+if [[ -z "${STEAMVR_LOGS_DIR}" ]]; then
+    STEAMVR_LOGS_DIR="${HOME}/.local/share/lepton/logs"
+    mkdir -p "${STEAMVR_LOGS_DIR}"
+fi
 
 function lepton_version()
 {

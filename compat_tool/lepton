@@ -202,16 +202,23 @@ case "${COMMAND}" in
                 extract_strace "$(logcat_debug_dir)"
             fi
 
-            # If the user asked for us to dump a logcat, OR we exited after less than 30 seconds
+            # If the user asked for us to dump a logcat, OR we exited after less
+            # than 30 seconds without ever showing a window.  Closing a window
+            # after a few seconds is an ordinary session on a desktop, and
+            # throwing the baked data away for it means the next start
+            # reinstalls the app -- about five seconds every time.
             local EARLY_SHUTDOWN=0
-            if (( "$(date "+%s")" < "${app_start_time} + 30" )); then
+            if (( "$(date "+%s")" < "${app_start_time} + 30" )) && [[ ! -f "$(saw_window_path)" ]]; then
                 EARLY_SHUTDOWN=1
             fi
             if [[ -n "${LEPTON_DUMP_LOGCAT:-}" ]] || [[ "${EARLY_SHUTDOWN}" == "1" ]]; then
                 println "Dumping logcat to $(logcat_debug_dir)"
                 dump_logcat "$(logcat_debug_dir)"
 
-                if [[ "${EARLY_SHUTDOWN}" == "1" ]]; then
+                # An install-only run is short on purpose; this guard is meant
+                # for apps that crash right after being started.
+                if [[ "${EARLY_SHUTDOWN}" == "1" ]] &&
+                   [[ "${LEPTON_INSTALL_ONLY:-false}" != "true" ]]; then
                     # Clearing baked app data in this case since something might be wrong.
                     clear_baked_app_data "early exit"
                 fi
@@ -256,7 +263,14 @@ case "${COMMAND}" in
                 update_baked_app_metadata
                 # If the app is not baked yet, the container will wait for a
                 # property.
-                continue_boot_after_bake
+                if [[ "${LEPTON_INSTALL_ONLY:-false}" == "true" ]]; then
+                    # Install and stop, the way Steam installs a game: the next
+                    # start boots with the app already baked in.
+                    println "App installed; stopping the container (LEPTON_INSTALL_ONLY)."
+                    LEPTON_SKIP_APP_WAIT=true
+                else
+                    continue_boot_after_bake
+                fi
             fi
         fi
 
@@ -267,7 +281,9 @@ case "${COMMAND}" in
             start_traced_probes
         fi
 
-        wait_for_container
+        if [[ "${LEPTON_SKIP_APP_WAIT:-false}" != "true" ]]; then
+            wait_for_container
+        fi
         teardown
         ;;
     sysbake)

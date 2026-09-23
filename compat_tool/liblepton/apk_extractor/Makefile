@@ -22,10 +22,23 @@ test-verbose: $(NATIVE_PATH)
 benchmark: $(NATIVE_PATH)
 	hyperfine '$(NATIVE_PATH) --print-app-id test/WalkaboutMiniGolf.xml'
 
-TARGET_PATH=target/aarch64-unknown-linux-gnu/release/apk-info-extractor
+# The extractor runs on the host that runs `lepton`, so it is built for the
+# host architecture unless a cross target is requested explicitly.
+# LEPTON_TARGET_ARCH=aarch64 reproduces the original Steam Frame cross build.
+LEPTON_TARGET_ARCH ?= $(shell uname -m)
+
+ifeq ($(LEPTON_TARGET_ARCH),aarch64)
+CARGO_TRIPLE := aarch64-unknown-linux-gnu
+CARGO_LINKER_ENV := CARGO_TARGET_AARCH64_UNKNOWN_LINUX_GNU_LINKER=aarch64-linux-gnu-gcc
+else
+CARGO_TRIPLE := x86_64-unknown-linux-gnu
+CARGO_LINKER_ENV :=
+endif
+
+TARGET_PATH=target/$(CARGO_TRIPLE)/release/apk-info-extractor
 $(TARGET_PATH): $(SRCS)
-	@CARGO_TARGET_AARCH64_UNKNOWN_LINUX_GNU_LINKER=aarch64-linux-gnu-gcc \
-	cargo build --target=aarch64-unknown-linux-gnu --profile=release
+	@$(CARGO_LINKER_ENV) \
+	cargo build --target=$(CARGO_TRIPLE) --profile=release
 
 bin:
 	mkdir -p $@

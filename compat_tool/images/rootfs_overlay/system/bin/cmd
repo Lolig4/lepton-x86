@@ -8,6 +8,19 @@ function android_sdk_version()
     cat /system/build.prop |grep ro.build.version.sdk= | sed "s/.*=//g"
 }
 
+# Name of the per-abi directory Android creates below /data/app/<pkg>/lib/.
+# (arm64-v8a -> arm64, x86_64 -> x86_64, see NativeLibraryHelper.)
+app_abi_dir()
+{
+    case "$(getprop ro.product.cpu.abi)" in
+        arm64-v8a) echo "arm64" ;;
+        x86_64)    echo "x86_64" ;;
+        armeabi*)  echo "arm" ;;
+        x86)       echo "x86" ;;
+        *)         echo "arm64" ;;
+    esac
+}
+
 # These helper functions unmount all vulkan layers from an app's libdir, and mount them in again
 unmount_vulkan_layers()
 {
@@ -19,7 +32,7 @@ unmount_vulkan_layers()
             APP_PATH="${APP_PATH%/base.apk}"
 
             if [[ -n "${APP_PATH}" ]]; then
-                local APP_LIB_DIR="${APP_PATH}/lib/arm64"
+                local APP_LIB_DIR="${APP_PATH}/lib/$(app_abi_dir)"
                 for vulkan_layer in "${APP_LIB_DIR}"/libVkLayer_*.so; do
                     PARENT_UID=0 PARENT_GID=0 umount $vulkan_layer 2>/dev/null >/dev/null || true
                 done
@@ -39,7 +52,7 @@ mount_vulkan_layers()
 
             # Mount enabled vulkan layers
             local LEPTON_LIB_DIR="/vendor/enabled_vulkan_layers"
-            local APP_LIB_DIR="${APP_PATH}/lib/arm64"
+            local APP_LIB_DIR="${APP_PATH}/lib/$(app_abi_dir)"
             for LIBPATH in $(find "${LEPTON_LIB_DIR}/" -name *.so); do
                 local LAYER_BASENAME="$(basename "${LIBPATH}")"
                 mkdir -p "${APP_LIB_DIR}"

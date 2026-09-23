@@ -10,7 +10,7 @@ function collect_debug_logs()
     local LEPTON_COMPAT_VERSION="$(pacman -Q | grep -E lepton-compat)"
     local STEAMOS_VERSION=$(source /etc/os-release; echo $BUILD_ID)
     local STEAMVR_VERSION="$(pacman -Q | grep -E 'deckard-steamvr-(main|rel)')"
-    local STEAM_VERSION="$(cat ${HOME}/.steam/steam/package/steam_client_$(cat ${HOME}/.steam/steam/package/beta)_linuxarm64.manifest | grep version | awk '{ print $2 }' | xargs)"
+    local STEAM_VERSION="$(cat ${HOME}/.steam/steam/package/steam_client_$(cat ${HOME}/.steam/steam/package/beta)_$(case "$(lepton_arch)" in aarch64) echo linuxarm64;; *) echo ubuntu12;; esac).manifest | grep version | awk '{ print $2 }' | xargs)"
     local LEPTON_VERSION="$(lepton_version)"
     local LEPTON_ROOTFS_VERSION="$(lepton_rootfs_version)"
 

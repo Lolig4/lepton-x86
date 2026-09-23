@@ -62,7 +62,14 @@ function setup_props()
         props_echo "ro.hardware.vulkan=pastel"
     else
         # Default to using turnip as our driver, but allow using the qcom driver
-        if [[ "${LEPTON_USE_QCOM_DRIVER:-false}" == "true" ]]; then
+        if [[ "$(lepton_arch)" == "x86_64" ]]; then
+            # No Adreno and no minigbm_msm here: RADV is built into the image
+            # (BOARD_MESA3D_VULKAN_DRIVERS := amd) and the generic gbm gralloc
+            # from hardware/waydroid handles buffer allocation.
+            props_echo "ro.hardware.egl=mesa"
+            props_echo "ro.hardware.vulkan=radeon"
+            props_echo "ro.hardware.gralloc=gbm"
+        elif [[ "${LEPTON_USE_QCOM_DRIVER:-false}" == "true" ]]; then
             props_echo "ro.hardware.egl=angle"
             props_echo "ro.hardware.vulkan=adreno"
             props_echo "ro.hardware.gralloc=qti-display"
@@ -73,8 +80,15 @@ function setup_props()
             props_echo "ro.hardware.gralloc=minigbm_msm"
         fi
 
-        # Zink + disable kopper to work with mesa
-        props_echo "mesa.loader.driver.override=zink"
+        # Zink + disable kopper to work with mesa.  On x86_64 the image carries a
+        # native gallium driver (radeonsi), so GL does not have to take the
+        # detour through Vulkan: zink could not match a physical device there
+        # and every EGL init failed, taking SurfaceFlinger with it.
+        if [[ "$(lepton_arch)" == "x86_64" ]]; then
+            props_echo "mesa.loader.driver.override=${LEPTON_MESA_DRIVER:-radeonsi}"
+        else
+            props_echo "mesa.loader.driver.override=zink"
+        fi
         props_echo "mesa.libgl.kopper.disable=true"
 
         # Tell Fossilize to write out shaders to this directory
@@ -130,8 +144,36 @@ function setup_props()
     # Only show the 2d screen if we're not baking and our app requests it.
     if ! is_sysbake && app_wants_flatscreen; then
         props_echo "waydroid.wayland_display=wayland-0"
-        props_echo "waydroid.background_start=false"
         props_echo "lepton.headless=false"
+
+        # Show just the app on the desktop, without Android's status bar,
+        # navigation bar or home screen.  In the waydroid hwcomposer that takes:
+        #  - multi-window mode: it composes the layers itself and can drop the
+        #    system bars (read once at startup),
+        #  - background_start=true: otherwise it opens a window with the whole
+        #    Android UI at startup and forces active_apps back to "Waydroid",
+        #  - active_apps: which app's windows go to the desktop,
+        #  - crop_app_windows: size each app window to its task (opaque, with
+        #    a compositor title bar) instead of a transparent overlay covering
+        #    the whole screen, so it can be moved like any other window.
+        # Opt-in via LEPTON_APP_ONLY=true (the Steam bundle turns it on).
+        if is_app && [[ "${LEPTON_APP_ONLY:-false}" == "true" ]]; then
+            props_echo "waydroid.background_start=true"
+            #  - multi_windows=false: single-window mode.  Multi-window runs the
+            #    app in an Android freeform window, which brings its own frame,
+            #    resize handles and caption inside our window -- two nested
+            #    windows.  Single-window mode shows the one task, full screen
+            #    inside Android, in one desktop window.
+            props_echo "persist.waydroid.multi_windows=${LEPTON_MULTI_WINDOWS:-true}"
+            props_echo "waydroid.active_apps=$(get_app_id)"
+            props_echo "waydroid.crop_app_windows=${LEPTON_CROP_APP_WINDOWS:-true}"
+            #  - window_decoration=false: the compositor draws the title bar,
+            #    so Android's own caption would be a second one on top of it.
+            props_echo "persist.waydroid.window_decoration=${LEPTON_ANDROID_CAPTION:-false}"
+
+        else
+            props_echo "waydroid.background_start=false"
+        fi
     else
         props_echo "lepton.headless=true"
     fi
