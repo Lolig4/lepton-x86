@@ -35,7 +35,10 @@ pushd "${ROOT_DIR}/output" >/dev/null
 
     # Set target
     lunch "${1:-lineage_lepton_arm64_only-userdebug}"
-    num_procs=$(nproc)
+    # nproc reports every host CPU, which is wrong on a memory-constrained
+    # machine: AOSP's java/metalava steps need several GB each and will OOM
+    # long before the cores run out.  LEPTON_JOBS caps it.
+    num_procs=${LEPTON_JOBS:-$(nproc)}
     make installclean -j${num_procs}
     if [[ "$IS_CI" == "true" ]]; then
         echo "Starting build... (logs will be in output/out/verbose.log.gz)"
