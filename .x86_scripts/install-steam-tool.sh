@@ -96,6 +96,13 @@ export LEPTON_APP_ONLY="${LEPTON_APP_ONLY:-true}"
 # Give the app a window of its own size with a title bar from the desktop,
 # instead of a transparent overlay the size of the whole screen.
 export LEPTON_CROP_APP_WINDOWS="${LEPTON_CROP_APP_WINDOWS:-true}"
+
+# Android's on-screen keyboard.  The desktop has a real one and Lepton passes
+# it through, so the soft keyboard only covers the app -- in a window of its
+# own, which arrives on the desktop as an empty second window, and its first
+# appearance stalls the app while it loads its dictionaries.  Set to true if a
+# machine has no keyboard.
+export LEPTON_SOFT_KEYBOARD="${LEPTON_SOFT_KEYBOARD:-false}"
 CONF
 
 cat > "${STEAM_TOOL_DIR}/compatibilitytool.vdf" <<'VDF'
