@@ -9,6 +9,10 @@ ENV USER root
 # Install dependencies
 RUN /workdir/.ci_scripts/install-build-rootfs-dependencies.sh
 
+# glslang >= 12.2 for mesa's RADV build (see the script for details).  A separate
+# step so it does not invalidate the cached dependency layer above.
+RUN /workdir/.ci_scripts/install-glslang.sh
+
 # Set the work directory
 ########################
 WORKDIR /workdir
